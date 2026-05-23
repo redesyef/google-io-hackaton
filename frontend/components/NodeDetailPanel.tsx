@@ -8,12 +8,13 @@ import { useStore } from "@/lib/store";
 
 export default function NodeDetailPanel() {
   const selectedId = useStore((s) => s.selectedNodeId);
-  const nodes = useStore((s) => s.nodes);
+  const active = useStore((s) => s.diagrams.find((d) => d.id === s.activeDiagramId));
   const setSelectedNode = useStore((s) => s.setSelectedNode);
   const applyDiagramPatch = useStore((s) => s.applyDiagramPatch);
   const [working, setWorking] = useState<"apply" | "discard" | null>(null);
   const [message, setMessage] = useState<string | null>(null);
 
+  const nodes = active?.nodes ?? [];
   const node = nodes.find((n) => n.id === selectedId);
   if (!node) return null;
 

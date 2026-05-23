@@ -3,6 +3,7 @@
 import { useEffect, useRef, useState } from "react";
 import { ArrowLeft, Send, Sparkles, Zap } from "lucide-react";
 
+import { UiBlockRenderer } from "@/components/UiBlocks";
 import { sendChatMessage } from "@/lib/chat";
 import { useStore } from "@/lib/store";
 import type { ChatMessage } from "@/lib/types";
@@ -12,7 +13,9 @@ export default function ChatPanel({ projectId }: { projectId: string }) {
   const messages = useStore((s) => s.messages);
   const streaming = useStore((s) => s.streaming);
   const selectedNodeId = useStore((s) => s.selectedNodeId);
-  const nodes = useStore((s) => s.nodes);
+  const activeNodes = useStore((s) =>
+    s.diagrams.find((d) => d.id === s.activeDiagramId)?.nodes ?? [],
+  );
 
   const scrollRef = useRef<HTMLDivElement | null>(null);
 
@@ -22,7 +25,7 @@ export default function ChatPanel({ projectId }: { projectId: string }) {
 
   function selectedNodeLabel(): string | null {
     if (!selectedNodeId) return null;
-    const n = nodes.find((x) => x.id === selectedNodeId);
+    const n = activeNodes.find((x) => x.id === selectedNodeId);
     return n ? n.label : null;
   }
 
@@ -109,6 +112,7 @@ function MessageBubble({ message }: { message: ChatMessage }) {
     );
   }
 
+  const blocks = message.blocks ?? [];
   return (
     <div className="space-y-1.5">
       {(message.trace ?? []).length > 0 && (
@@ -125,9 +129,24 @@ function MessageBubble({ message }: { message: ChatMessage }) {
           </ul>
         </details>
       )}
-      <div className="max-w-[95%] rounded-2xl rounded-bl-sm bg-canvas-panel border border-canvas-border px-3 py-2 text-sm whitespace-pre-wrap leading-relaxed">
-        {message.content || <span className="text-gray-500 italic">thinking…</span>}
-      </div>
+
+      {blocks.length > 0 && (
+        <div className="space-y-2">
+          {blocks.map((b, i) => (
+            <UiBlockRenderer key={i} block={b} />
+          ))}
+        </div>
+      )}
+
+      {message.content ? (
+        <div className="rounded-2xl rounded-bl-sm bg-canvas-panel border border-canvas-border px-3 py-2 text-[13px] leading-snug">
+          {message.content}
+        </div>
+      ) : blocks.length === 0 ? (
+        <div className="rounded-2xl rounded-bl-sm bg-canvas-panel border border-canvas-border px-3 py-2 text-[13px] leading-snug">
+          <span className="text-gray-500 italic">thinking…</span>
+        </div>
+      ) : null}
     </div>
   );
 }

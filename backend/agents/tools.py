@@ -267,6 +267,16 @@ def _expand_resource(parent_id: str, parent_kind: str, target: dict[str, Any]) -
     return sub_nodes, sub_edges
 
 
+def _primary_node_for(target: dict[str, Any], parent_kind: str, parent_id: str) -> dict[str, Any]:
+    if parent_kind == "compute":
+        return {"id": parent_id, "kind": "compute", "label": target["name"], "subtitle": target.get("machine_type", ""), "status": target.get("status", "")}
+    if parent_kind == "sql":
+        return {"id": parent_id, "kind": "sql", "label": target["name"], "subtitle": target.get("tier", "")}
+    if parent_kind == "storage":
+        return {"id": parent_id, "kind": "storage", "label": target["name"], "subtitle": target.get("storage_class", "")}
+    return {"id": parent_id, "kind": "load_balancer", "label": target["name"], "subtitle": target.get("ip_address", "")}
+
+
 def tool_get_resource_context(client: BaseGcpClient, resource_id: str) -> ToolResult:
     """Return the expanded context for a single resource: attached components,
     config, dependencies. Adds sub-nodes anchored to the parent on the canvas.
@@ -304,11 +314,24 @@ def tool_get_resource_context(client: BaseGcpClient, resource_id: str) -> ToolRe
     }[parent_kind]
 
     sub_nodes, sub_edges = _expand_resource(parent_id, parent_kind, target)
+    parent_node = _primary_node_for(target, parent_kind, parent_id)
+    diagram_title = f"Context · {target['name']}"
 
     return ToolResult(
-        data={"resource": target, "kind": parent_kind, "context_items": len(sub_nodes)},
+        data={
+            "resource": target,
+            "kind": parent_kind,
+            "context_items": len(sub_nodes),
+            "diagram_title": diagram_title,
+        },
         summary=f"Expanded context for {target['name']}: {len(sub_nodes)} related components.",
-        diagram_patch={"nodes_add": sub_nodes, "edges_add": sub_edges},
+        diagram_patch={
+            "scope": "new",
+            "diagram_title": diagram_title,
+            "diagram_description": f"Full context expansion of {target['name']}",
+            "nodes_replace": [parent_node, *sub_nodes],
+            "edges_replace": sub_edges,
+        },
     )
 
 
@@ -342,10 +365,12 @@ def tool_full_architecture_map(client: BaseGcpClient) -> ToolResult:
         sn, se = _expand_resource(f"lb:{lb['name']}", "load_balancer", lb)
         all_sub_nodes.extend(sn); all_sub_edges.extend(se)
 
+    diagram_title = "Full Architecture · All layers"
     return ToolResult(
         data={
             "primary_count": len(primary_nodes),
             "sub_count": len(all_sub_nodes),
+            "diagram_title": diagram_title,
             "layers": {
                 "edge": [n["id"] for n in primary_nodes if n["kind"] == "load_balancer"],
                 "compute": [n["id"] for n in primary_nodes if n["kind"] == "compute"],
@@ -358,10 +383,11 @@ def tool_full_architecture_map(client: BaseGcpClient) -> ToolResult:
             f"resources, plus {len(all_sub_nodes)} sub-components across every layer."
         ),
         diagram_patch={
-            "nodes_replace": primary_nodes,
-            "edges_replace": primary_edges,
-            "nodes_add": all_sub_nodes,
-            "edges_add": all_sub_edges,
+            "scope": "new",
+            "diagram_title": diagram_title,
+            "diagram_description": "Layer 1 + every attached component",
+            "nodes_replace": [*primary_nodes, *all_sub_nodes],
+            "edges_replace": [*primary_edges, *all_sub_edges],
         },
     )
 

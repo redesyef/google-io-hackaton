@@ -164,11 +164,14 @@ function layoutNodes(
 }
 
 function Inner() {
-  const nodes = useStore((s) => s.nodes);
-  const edges = useStore((s) => s.edges);
-  const highlightedIds = useStore((s) => s.highlightedIds);
+  const active = useStore((s) =>
+    s.diagrams.find((d) => d.id === s.activeDiagramId),
+  );
   const selectedId = useStore((s) => s.selectedNodeId);
   const setSelectedNode = useStore((s) => s.setSelectedNode);
+  const nodes = active?.nodes ?? [];
+  const edges = active?.edges ?? [];
+  const highlightedIds = active?.highlightedIds ?? [];
 
   const rfNodes = useMemo(
     () => layoutNodes(nodes, highlightedIds, selectedId),

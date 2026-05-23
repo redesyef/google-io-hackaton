@@ -1,6 +1,6 @@
 "use client";
 
-import { Boxes, DollarSign, Layers3, Network, Rocket } from "lucide-react";
+import { Boxes, DollarSign, Layers3, Network } from "lucide-react";
 
 import { sendChatMessage } from "@/lib/chat";
 import { useStore } from "@/lib/store";
@@ -42,15 +42,6 @@ const AGENT_META: AgentMeta[] = [
     color: "#FBBC04",
     prompt: "Where am I overspending? Suggest concrete optimizations.",
     toolsCount: 2,
-  },
-  {
-    name: "deploy",
-    label: "Deploy",
-    description: "Proposes (never applies)",
-    icon: Rocket,
-    color: "#EA4335",
-    prompt: "Propose a Redis cache in front of the orders database.",
-    toolsCount: 1,
   },
 ];
 
