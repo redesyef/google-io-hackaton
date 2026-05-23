@@ -1,17 +1,21 @@
 """Thin async wrapper over the google-genai SDK.
 
-Exposes two methods used by the agents:
-  - generate(): single-turn generation (used inside sub-agent tool loops)
-  - stream_text(): token streaming (used for the orchestrator's final answer)
+Conversation history is stored as a uniform list of typed
+`google.genai.types.Content` objects. Mixing dict and Content in the
+list breaks tool-use multi-turn flows (the SDK fails to round-trip
+fields like `thought_signature` on function_call parts).
 
-If the SDK is unavailable or the API key is missing, the backend falls back
-to a deterministic mock so the SSE pipeline still works end-to-end during
-development without a key.
+Helpers:
+  - make_user_text         : Content for a plain user prompt
+  - make_user_function_response : Content carrying tool results
+  - model_turn_for_history : the raw Content from a model response
+
+If the SDK is missing or the API key isn't set, a deterministic mock
+takes over so the SSE pipeline still streams end-to-end.
 """
 from __future__ import annotations
 
 import asyncio
-import json
 import os
 from collections.abc import AsyncIterator
 from dataclasses import dataclass
@@ -20,12 +24,21 @@ from typing import Any
 from core.config import settings
 
 
+# ---------------------------------------------------------------------------
+# Response
+# ---------------------------------------------------------------------------
+
+
 @dataclass
 class GenResponse:
     text: str | None
     function_call: dict[str, Any] | None  # {"name": str, "args": dict}
-    thought_signature: bytes | None = None
-    raw_content: Any | None = None  # original candidate.content (preserves thought_signature)
+    raw_content: Any | None = None  # original candidate.content (Content)
+
+
+# ---------------------------------------------------------------------------
+# Backend
+# ---------------------------------------------------------------------------
 
 
 class GeminiBackend:
@@ -39,7 +52,6 @@ class GeminiBackend:
         try:
             from google import genai  # type: ignore
 
-            self._genai = genai
             self._client = genai.Client(api_key=api_key)
         except Exception:
             self._mock = True
@@ -49,13 +61,11 @@ class GeminiBackend:
         return self._mock
 
     # ------------------------------------------------------------------
-    # Generation
-    # ------------------------------------------------------------------
 
     async def generate(
         self,
         system_prompt: str,
-        history: list[dict[str, Any]],
+        history: list[Any],
         tools: list[dict[str, Any]] | None = None,
     ) -> GenResponse:
         if self._mock:
@@ -63,19 +73,18 @@ class GeminiBackend:
 
         from google.genai import types  # type: ignore
 
-        config_kwargs: dict[str, Any] = {"system_instruction": system_prompt}
-        _apply_no_thinking(config_kwargs, types)
+        cfg_kwargs: dict[str, Any] = {"system_instruction": system_prompt}
+        _apply_no_thinking(cfg_kwargs, types)
         if tools:
-            normalized = [_normalize_tool(t) for t in tools]
-            config_kwargs["tools"] = [
-                types.Tool(function_declarations=[types.FunctionDeclaration(**t) for t in normalized])
+            cfg_kwargs["tools"] = [
+                types.Tool(function_declarations=[_build_function_declaration(t, types) for t in tools])
             ]
 
         def _call() -> Any:
             return self._client.models.generate_content(
                 model=settings.gemini_model,
                 contents=history,
-                config=types.GenerateContentConfig(**config_kwargs),
+                config=types.GenerateContentConfig(**cfg_kwargs),
             )
 
         response = await asyncio.to_thread(_call)
@@ -84,7 +93,7 @@ class GeminiBackend:
     async def stream_text(
         self,
         system_prompt: str,
-        history: list[dict[str, Any]],
+        history: list[Any],
     ) -> AsyncIterator[str]:
         if self._mock:
             async for chunk in self._mock_stream(history):
@@ -122,97 +131,112 @@ class GeminiBackend:
     # Mock fallback (no API key)
     # ------------------------------------------------------------------
 
-    def _mock_generate(self, history: list[dict[str, Any]], tools: list[dict[str, Any]] | None) -> GenResponse:
-        last_user_text = ""
-        for msg in reversed(history):
-            if msg.get("role") == "user":
-                for part in msg.get("parts", []):
-                    if "text" in part:
-                        last_user_text = part["text"]
-                        break
-                if last_user_text:
-                    break
-
-        already_called = any(
-            "function_response" in part
-            for msg in history
-            for part in msg.get("parts", [])
-        )
+    def _mock_generate(self, history: list[Any], tools: list[dict[str, Any]] | None) -> GenResponse:
+        last_user_text = _extract_last_user_text(history)
+        already_called = _history_has_function_response(history)
 
         if tools and not already_called:
             preferred = tools[0]["name"]
             return GenResponse(text=None, function_call={"name": preferred, "args": {}})
-
         return GenResponse(
             text=f"(mock without GEMINI_API_KEY) Acknowledged: {last_user_text[:160]}",
             function_call=None,
         )
 
-    async def _mock_stream(self, history: list[dict[str, Any]]) -> AsyncIterator[str]:
-        last = ""
-        for msg in reversed(history):
-            if msg.get("role") == "user":
-                for part in msg.get("parts", []):
-                    if "text" in part:
-                        last = part["text"]; break
-                if last: break
+    async def _mock_stream(self, history: list[Any]) -> AsyncIterator[str]:
+        last = _extract_last_user_text(history)
         words = (
             "(mock orchestrator without GEMINI_API_KEY) I would coordinate the "
             f"inventory, cost, and deploy sub-agents to answer: {last}. "
-            "Set GEMINI_API_KEY in backend/.env to see the real Gemini 3.5 Flash response."
+            "Set GEMINI_API_KEY in backend/.env to see the real Gemini response."
         ).split(" ")
         for w in words:
             await asyncio.sleep(0.02)
             yield w + " "
 
 
+# ---------------------------------------------------------------------------
+# Content builders (always return typed objects when SDK is available)
+# ---------------------------------------------------------------------------
+
+
+def make_user_text(text: str) -> Any:
+    try:
+        from google.genai import types  # type: ignore
+
+        return types.Content(role="user", parts=[types.Part(text=text)])
+    except Exception:
+        return {"role": "user", "parts": [{"text": text}]}
+
+
+def make_user_function_response(name: str, response: dict[str, Any]) -> Any:
+    try:
+        from google.genai import types  # type: ignore
+
+        return types.Content(
+            role="user",
+            parts=[types.Part(function_response=types.FunctionResponse(name=name, response=response))],
+        )
+    except Exception:
+        return {"role": "user", "parts": [{"function_response": {"name": name, "response": response}}]}
+
+
+def model_turn_for_history(response: GenResponse) -> Any:
+    """Return the model's turn for history append. Prefers the raw Content
+    captured from the response so all internal fields (thought_signature
+    included) round-trip exactly as the model emitted them."""
+    if response.raw_content is not None:
+        return response.raw_content
+    part: dict[str, Any] = {}
+    if response.function_call is not None:
+        part["function_call"] = response.function_call
+    if response.text:
+        part["text"] = response.text
+    return {"role": "model", "parts": [part]}
+
+
+# ---------------------------------------------------------------------------
+# Tool-spec → FunctionDeclaration
+# ---------------------------------------------------------------------------
+
+
 _TYPE_MAP = {
-    "string": "STRING",
-    "number": "NUMBER",
-    "integer": "INTEGER",
-    "boolean": "BOOLEAN",
-    "array": "ARRAY",
-    "object": "OBJECT",
+    "string": "STRING", "number": "NUMBER", "integer": "INTEGER",
+    "boolean": "BOOLEAN", "array": "ARRAY", "object": "OBJECT",
 }
 
 
-def _normalize_schema(schema: Any) -> Any:
-    """Recursively uppercase JSON-Schema 'type' fields for google-genai.
+def _schema_from_dict(d: Any, types_module: Any) -> Any:
+    """Convert a JSON-Schema-style dict to types.Schema."""
+    if not isinstance(d, dict):
+        return d
+    kwargs: dict[str, Any] = {}
+    for k, v in d.items():
+        if k == "type" and isinstance(v, str):
+            kwargs["type"] = _TYPE_MAP.get(v.lower(), v.upper())
+        elif k == "properties" and isinstance(v, dict):
+            kwargs["properties"] = {pk: _schema_from_dict(pv, types_module) for pk, pv in v.items()}
+        elif k == "items" and isinstance(v, dict):
+            kwargs["items"] = _schema_from_dict(v, types_module)
+        elif k in ("required", "enum") and isinstance(v, list):
+            kwargs[k] = v
+        elif k == "description" and isinstance(v, str):
+            kwargs["description"] = v
+    return types_module.Schema(**kwargs)
 
-    The SDK validates `type` against an enum of upper-case literals
-    (STRING, OBJECT, ...). We author tool specs in lowercase JSON-Schema
-    convention and translate at the SDK boundary.
-    """
-    if isinstance(schema, dict):
-        out: dict[str, Any] = {}
-        for k, v in schema.items():
-            if k == "type" and isinstance(v, str) and v.lower() in _TYPE_MAP:
-                out[k] = _TYPE_MAP[v.lower()]
-            else:
-                out[k] = _normalize_schema(v)
-        return out
-    if isinstance(schema, list):
-        return [_normalize_schema(x) for x in schema]
-    return schema
 
-
-def _normalize_tool(tool: dict[str, Any]) -> dict[str, Any]:
-    out = dict(tool)
-    if "parameters" in out:
-        out["parameters"] = _normalize_schema(out["parameters"])
-    return out
+def _build_function_declaration(tool: dict[str, Any], types_module: Any) -> Any:
+    params_dict = tool.get("parameters") or {"type": "object", "properties": {}}
+    return types_module.FunctionDeclaration(
+        name=tool["name"],
+        description=tool.get("description", ""),
+        parameters=_schema_from_dict(params_dict, types_module),
+    )
 
 
 def _apply_no_thinking(config_kwargs: dict[str, Any], types_module: Any) -> None:
-    """Disable thinking on Gemini 3.5+ so the API does not require us to
-    round-trip thought_signature bytes through the conversation history.
-
-    The signature round-trip is fragile when history mixes dict and typed
-    Content entries (function-call signatures get stripped during SDK
-    re-serialization). Turning thinking off removes the requirement and
-    keeps our multi-agent loop reliable. Best-effort: silently no-op on
-    SDK versions that do not expose ThinkingConfig.
-    """
+    """Disable thinking on Gemini 2.5/3.5 so the multi-turn loop is robust
+    even if a typed Content somehow loses its thought_signature."""
     ThinkingConfig = getattr(types_module, "ThinkingConfig", None)
     if ThinkingConfig is None:
         return
@@ -225,48 +249,87 @@ def _apply_no_thinking(config_kwargs: dict[str, Any], types_module: Any) -> None
             pass
 
 
-def model_turn_for_history(response: "GenResponse") -> Any:
-    """Return the model's turn as it should be appended to the conversation
-    history. Prefers the original Content object so the SDK can round-trip
-    bytes fields like thought_signature (required by Gemini 3.5+ for
-    multi-turn tool use). Falls back to a hand-built dict for mock mode."""
-    if response.raw_content is not None:
-        return response.raw_content
-    part: dict[str, Any] = {}
-    if response.function_call is not None:
-        part["function_call"] = response.function_call
-    if response.thought_signature is not None:
-        part["thought_signature"] = response.thought_signature
-    if response.text:
-        part["text"] = response.text
-    return {"role": "model", "parts": [part]}
+# ---------------------------------------------------------------------------
+# Response parsing
+# ---------------------------------------------------------------------------
 
 
 def _parse_response(response: Any) -> GenResponse:
     try:
         candidate = response.candidates[0]
         raw_content = getattr(candidate, "content", None)
-        for part in candidate.content.parts:
-            fc = getattr(part, "function_call", None)
-            if fc and getattr(fc, "name", None):
-                args = {}
-                raw_args = getattr(fc, "args", None)
-                if raw_args:
-                    try:
-                        args = dict(raw_args)
-                    except Exception:
+        if raw_content is not None:
+            for part in raw_content.parts or []:
+                fc = getattr(part, "function_call", None)
+                if fc and getattr(fc, "name", None):
+                    args: dict[str, Any] = {}
+                    raw_args = getattr(fc, "args", None)
+                    if raw_args:
                         try:
-                            args = json.loads(str(raw_args))
+                            args = dict(raw_args)
                         except Exception:
                             args = {}
-                sig = getattr(part, "thought_signature", None)
-                return GenResponse(
-                    text=None,
-                    function_call={"name": fc.name, "args": args},
-                    thought_signature=sig,
-                    raw_content=raw_content,
-                )
+                    return GenResponse(
+                        text=None,
+                        function_call={"name": fc.name, "args": args},
+                        raw_content=raw_content,
+                    )
         text = getattr(response, "text", None) or ""
         return GenResponse(text=text, function_call=None, raw_content=raw_content)
     except Exception:
         return GenResponse(text=str(response), function_call=None)
+
+
+# ---------------------------------------------------------------------------
+# History helpers (work with both Content and dict-form items)
+# ---------------------------------------------------------------------------
+
+
+def _extract_last_user_text(history: list[Any]) -> str:
+    for item in reversed(history):
+        role = _role_of(item)
+        if role != "user":
+            continue
+        text = _first_text_part(item)
+        if text:
+            return text
+    return ""
+
+
+def _history_has_function_response(history: list[Any]) -> bool:
+    for item in history:
+        for part in _parts_of(item):
+            if _part_has_function_response(part):
+                return True
+    return False
+
+
+def _role_of(item: Any) -> str:
+    if isinstance(item, dict):
+        return item.get("role", "")
+    return getattr(item, "role", "") or ""
+
+
+def _parts_of(item: Any) -> list[Any]:
+    if isinstance(item, dict):
+        return item.get("parts", []) or []
+    return getattr(item, "parts", None) or []
+
+
+def _first_text_part(item: Any) -> str:
+    for part in _parts_of(item):
+        if isinstance(part, dict):
+            t = part.get("text")
+            if t:
+                return t
+        else:
+            t = getattr(part, "text", None)
+            if t:
+                return t
+    return ""
+
+
+def _part_has_function_response(part: Any) -> bool:
+    if isinstance(part, dict):
+        return "function_response" in part
+    return getattr(part, "function_response", None) is not None
