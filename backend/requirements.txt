@@ -9,6 +9,4 @@ google-genai==0.4.0
 google-cloud-resource-manager==1.13.1
 google-cloud-compute==1.23.0
 google-cloud-storage==2.19.0
-google-cloud-billing==1.15.1
-google-cloud-sql-connector==1.16.0
 httpx==0.28.1
