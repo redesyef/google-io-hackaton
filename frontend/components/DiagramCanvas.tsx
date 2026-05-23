@@ -32,8 +32,10 @@ const KIND_META: Record<
   sql: { icon: Database, color: "#EA4335", layer: 2 },
 };
 
+const DEFAULT_META = { icon: Cloud, color: "#9aa0a6", layer: 2 } as const;
+
 function fallbackMeta(kind: string) {
-  return { icon: Cloud, color: "#9aa0a6", layer: 2, ...(KIND_META[kind] ?? {}) };
+  return KIND_META[kind] ?? DEFAULT_META;
 }
 
 function ResourceNode({ data, selected }: NodeProps<RFNode>) {
