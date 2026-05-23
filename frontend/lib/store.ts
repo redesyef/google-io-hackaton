@@ -1,5 +1,25 @@
 import { create } from "zustand";
-import type { ChatMessage, DiagramEdge, DiagramNode, DiagramPatch } from "./types";
+import type {
+  AgentName,
+  AgentRuntime,
+  AgentStatus,
+  ChatMessage,
+  DiagramEdge,
+  DiagramNode,
+  DiagramPatch,
+} from "./types";
+
+const AGENT_NAMES: AgentName[] = ["orchestrator", "inventory", "cost", "deploy"];
+
+function defaultAgents(): Record<AgentName, AgentRuntime> {
+  return AGENT_NAMES.reduce(
+    (acc, name) => {
+      acc[name] = { status: "idle", toolsCalled: 0 };
+      return acc;
+    },
+    {} as Record<AgentName, AgentRuntime>,
+  );
+}
 
 type State = {
   messages: ChatMessage[];
@@ -8,6 +28,7 @@ type State = {
   highlightedIds: string[];
   selectedNodeId: string | null;
   streaming: boolean;
+  agents: Record<AgentName, AgentRuntime>;
 };
 
 type Actions = {
@@ -19,6 +40,9 @@ type Actions = {
   applyDiagramPatch: (patch: DiagramPatch) => void;
   setSelectedNode: (id: string | null) => void;
   setStreaming: (v: boolean) => void;
+  resetAgents: () => void;
+  setAgentStatus: (name: AgentName, status: AgentStatus) => void;
+  recordAgentTool: (name: AgentName, tool: string) => void;
 };
 
 let _idCounter = 0;
@@ -31,6 +55,7 @@ export const useStore = create<State & Actions>((set, get) => ({
   highlightedIds: [],
   selectedNodeId: null,
   streaming: false,
+  agents: defaultAgents(),
 
   reset: () =>
     set({
@@ -40,7 +65,28 @@ export const useStore = create<State & Actions>((set, get) => ({
       highlightedIds: [],
       selectedNodeId: null,
       streaming: false,
+      agents: defaultAgents(),
     }),
+
+  resetAgents: () => set({ agents: defaultAgents() }),
+
+  setAgentStatus: (name, status) =>
+    set((s) => ({
+      agents: { ...s.agents, [name]: { ...s.agents[name], status } },
+    })),
+
+  recordAgentTool: (name, tool) =>
+    set((s) => ({
+      agents: {
+        ...s.agents,
+        [name]: {
+          ...s.agents[name],
+          lastTool: tool,
+          toolsCalled: s.agents[name].toolsCalled + 1,
+          status: "active",
+        },
+      },
+    })),
 
   addUserMessage: (content) => {
     const id = nextId("u");
