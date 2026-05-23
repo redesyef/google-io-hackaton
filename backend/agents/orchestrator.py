@@ -25,7 +25,7 @@ import json
 from collections.abc import AsyncGenerator
 from typing import Any
 
-from agents.gemini_backend import GeminiBackend, model_function_call_part
+from agents.gemini_backend import GeminiBackend, model_turn_for_history
 from agents.sub_agents import AGENT_REGISTRY, SubAgentEvent, SubAgentOutcome, run_sub_agent
 from mcp.gcp_client import BaseGcpClient
 
@@ -154,7 +154,7 @@ async def run_orchestrator(
 
         sub_agent_summaries.append(f"[{agent_name}] {outcome.text}")
 
-        history.append({"role": "model", "parts": [model_function_call_part(response)]})
+        history.append(model_turn_for_history(response))
         history.append({
             "role": "user",
             "parts": [{

@@ -25,6 +25,7 @@ class GenResponse:
     text: str | None
     function_call: dict[str, Any] | None  # {"name": str, "args": dict}
     thought_signature: bytes | None = None
+    raw_content: Any | None = None  # original candidate.content (preserves thought_signature)
 
 
 class GeminiBackend:
@@ -199,19 +200,27 @@ def _normalize_tool(tool: dict[str, Any]) -> dict[str, Any]:
     return out
 
 
-def model_function_call_part(response: "GenResponse") -> dict[str, Any]:
-    """Build the model-side history part for a function call, including the
-    thought_signature when present (required by Gemini 3.5+ to keep tool
-    use coherent across turns)."""
-    part: dict[str, Any] = {"function_call": response.function_call}
+def model_turn_for_history(response: "GenResponse") -> Any:
+    """Return the model's turn as it should be appended to the conversation
+    history. Prefers the original Content object so the SDK can round-trip
+    bytes fields like thought_signature (required by Gemini 3.5+ for
+    multi-turn tool use). Falls back to a hand-built dict for mock mode."""
+    if response.raw_content is not None:
+        return response.raw_content
+    part: dict[str, Any] = {}
+    if response.function_call is not None:
+        part["function_call"] = response.function_call
     if response.thought_signature is not None:
         part["thought_signature"] = response.thought_signature
-    return part
+    if response.text:
+        part["text"] = response.text
+    return {"role": "model", "parts": [part]}
 
 
 def _parse_response(response: Any) -> GenResponse:
     try:
         candidate = response.candidates[0]
+        raw_content = getattr(candidate, "content", None)
         for part in candidate.content.parts:
             fc = getattr(part, "function_call", None)
             if fc and getattr(fc, "name", None):
@@ -230,8 +239,9 @@ def _parse_response(response: Any) -> GenResponse:
                     text=None,
                     function_call={"name": fc.name, "args": args},
                     thought_signature=sig,
+                    raw_content=raw_content,
                 )
         text = getattr(response, "text", None) or ""
-        return GenResponse(text=text, function_call=None)
+        return GenResponse(text=text, function_call=None, raw_content=raw_content)
     except Exception:
         return GenResponse(text=str(response), function_call=None)
