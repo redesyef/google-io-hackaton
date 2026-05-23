@@ -122,7 +122,7 @@ export default function ChatPage() {
 
   return (
     <main className="h-screen flex overflow-hidden">
-      <aside className="border-r border-canvas-border bg-canvas-panel flex flex-col h-screen w-[420px] shrink-0">
+      <aside className="border-r border-canvas-border bg-canvas-panel flex flex-col h-screen w-[340px] shrink-0 min-w-0">
         <ChatPanel projectId={status.project_id ?? "—"} />
         <div className="flex border-t border-canvas-border text-xs text-gray-500">
           <button
