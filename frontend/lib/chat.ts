@@ -15,7 +15,9 @@ export function sendChatMessage(rawText: string) {
   const trimmed = rawText.trim();
   if (!trimmed) return;
 
-  const selectedNode = s.nodes.find((n) => n.id === s.selectedNodeId) ?? null;
+  const activeDiagram = s.diagrams.find((d) => d.id === s.activeDiagramId);
+  const selectedNode =
+    activeDiagram?.nodes.find((n) => n.id === s.selectedNodeId) ?? null;
   const decorated = selectedNode
     ? `[Context: user has selected the resource "${selectedNode.label}".] ${trimmed}`
     : trimmed;
@@ -71,6 +73,9 @@ export function sendChatMessage(rawText: string) {
           break;
         case "diagram_update":
           store.applyDiagramPatch(evt.data);
+          break;
+        case "ui_block":
+          store.appendBlock(assistantId, evt.data);
           break;
         case "message_chunk":
           store.appendToAssistant(assistantId, evt.data.text);

@@ -25,6 +25,7 @@ export function openChatStream(message: string, handlers: StreamHandlers): () =>
     "tool_call",
     "tool_result",
     "diagram_update",
+    "ui_block",
     "message_chunk",
     "done",
     "error",

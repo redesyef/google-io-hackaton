@@ -6,6 +6,7 @@ import { useRouter } from "next/navigation";
 import AgentsPanel from "@/components/AgentsPanel";
 import ChatPanel from "@/components/ChatPanel";
 import DiagramCanvas from "@/components/DiagramCanvas";
+import DiagramTabs from "@/components/DiagramTabs";
 import NodeDetailPanel from "@/components/NodeDetailPanel";
 import { apiUrl } from "@/lib/api";
 import { useStore } from "@/lib/store";
@@ -14,7 +15,7 @@ import type { GcpStatus } from "@/lib/types";
 export default function ChatPage() {
   const router = useRouter();
   const [status, setStatus] = useState<GcpStatus | null>(null);
-  const applyDiagramPatch = useStore((s) => s.applyDiagramPatch);
+  const seedInitialDiagram = useStore((s) => s.seedInitialDiagram);
   const reset = useStore((s) => s.reset);
 
   useEffect(() => {
@@ -92,13 +93,13 @@ export default function ChatPage() {
         }
       }
       reset();
-      applyDiagramPatch({ nodes_replace: nodes, edges_replace: edges });
+      seedInitialDiagram("Layer 1 · Architecture", nodes, edges);
     }
     load().catch(() => router.push("/login"));
     return () => {
       cancelled = true;
     };
-  }, [router, applyDiagramPatch, reset]);
+  }, [router, seedInitialDiagram, reset]);
 
   async function logout() {
     await fetch(apiUrl("/auth/logout"), { method: "POST", credentials: "include" });
@@ -142,11 +143,14 @@ export default function ChatPage() {
         </div>
       </aside>
       <AgentsPanel />
-      <section className="bg-canvas-bg h-screen relative flex-1 min-w-0">
-        <DiagramCanvas />
-        <NodeDetailPanel />
-        <div className="absolute top-3 right-3 text-[10px] uppercase tracking-wider text-gray-500">
-          {status.mode} · {status.project_id} · {status.region}
+      <section className="bg-canvas-bg h-screen flex flex-col flex-1 min-w-0">
+        <DiagramTabs />
+        <div className="relative flex-1 min-h-0">
+          <DiagramCanvas />
+          <NodeDetailPanel />
+          <div className="absolute top-3 right-3 text-[10px] uppercase tracking-wider text-gray-500 pointer-events-none">
+            {status.mode} · {status.project_id} · {status.region}
+          </div>
         </div>
       </section>
     </main>

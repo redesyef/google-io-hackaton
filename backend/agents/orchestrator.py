@@ -168,9 +168,11 @@ async def run_orchestrator(
     yield {"event": "status", "data": {"text": "Synthesizing answer…"}}
 
     synthesis_prompt = (
-        "Based on the sub-agent outputs in the conversation history, write a "
-        "single concise answer to the user. Do not call any more tools. "
-        "Use markdown for structure when helpful."
+        "Write a SHORT final answer to the user (1–2 sentences, max 35 words). "
+        "The UI is already showing structured cards with the numbers, lists, "
+        "and resource names — DO NOT repeat them. Just give the human takeaway "
+        "(what does this mean for them) and one clear next step they can ask "
+        "for. Plain text, no markdown headers or bullet lists."
     )
     history.append(make_user_text(synthesis_prompt))
 

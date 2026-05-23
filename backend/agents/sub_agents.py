@@ -21,6 +21,7 @@ from agents.gemini_backend import (
     model_turn_for_history,
 )
 from agents.tools import COST_TOOLS, DEPLOY_TOOLS, INVENTORY_TOOLS, ToolResult
+from agents.ui_blocks import ui_block_for
 from mcp.gcp_client import BaseGcpClient
 
 
@@ -157,6 +158,9 @@ async def run_sub_agent(
             yield SubAgentEvent("tool_result", {"agent": spec.name, "tool": fc_name, "summary": result.summary})
             if result.diagram_patch:
                 yield SubAgentEvent("diagram_update", result.diagram_patch)
+            block = ui_block_for(fc_name, result.data)
+            if block is not None:
+                yield SubAgentEvent("ui_block", block)
 
             history.append(model_turn_for_history(response))
             history.append(make_user_function_response(fc_name, result.data))

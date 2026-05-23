@@ -33,15 +33,6 @@ export type DiagramNode = {
   parent_id?: string;
 };
 
-export type AgentName = "orchestrator" | "inventory" | "cost" | "deploy";
-export type AgentStatus = "idle" | "active" | "done";
-
-export type AgentRuntime = {
-  status: AgentStatus;
-  lastTool?: string;
-  toolsCalled: number;
-};
-
 export type DiagramEdge = {
   id: string;
   source: string;
@@ -50,6 +41,10 @@ export type DiagramEdge = {
 };
 
 export type DiagramPatch = {
+  scope?: "active" | "new";
+  diagram_title?: string;
+  diagram_description?: string;
+  closeable?: boolean;
   nodes_replace?: DiagramNode[];
   edges_replace?: DiagramEdge[];
   nodes_add?: DiagramNode[];
@@ -59,6 +54,34 @@ export type DiagramPatch = {
   highlight_reason?: string;
 };
 
+export type Diagram = {
+  id: string;
+  title: string;
+  description?: string;
+  closeable: boolean;
+  nodes: DiagramNode[];
+  edges: DiagramEdge[];
+  highlightedIds: string[];
+  createdAt: number;
+};
+
+export type UiBlock =
+  | { type: "inventory"; project_id: string; counts: { compute: number; storage: number; sql: number; load_balancer: number } }
+  | { type: "cost"; monthly_estimate_usd: number; by_service: Record<string, number>; anomaly_count: number }
+  | {
+      type: "optimization";
+      suggestions: { target: string; severity: "high" | "medium" | "low" | string; action: string }[];
+    }
+  | { type: "proposal"; resource_kind: string; name: string; spec: Record<string, unknown>; node_id: string }
+  | {
+      type: "architecture";
+      primary_count: number;
+      sub_count: number;
+      layers: { edge: string[]; compute: string[]; data: string[]; attached: string[] };
+      diagram_title: string;
+    }
+  | { type: "context"; resource_kind: string; name: string; context_items: number; diagram_title: string };
+
 export type ChatEvent =
   | { event: "status"; data: { text: string } }
   | { event: "agent_start"; data: { agent: string } }
@@ -66,6 +89,7 @@ export type ChatEvent =
   | { event: "tool_call"; data: { agent: string; tool: string; args: Record<string, unknown> } }
   | { event: "tool_result"; data: { agent: string; tool: string; summary: string } }
   | { event: "diagram_update"; data: DiagramPatch }
+  | { event: "ui_block"; data: UiBlock }
   | { event: "message_chunk"; data: { text: string } }
   | { event: "done"; data: { full_text: string } }
   | { event: "error"; data: { message: string } };
@@ -75,6 +99,7 @@ export type ChatMessage = {
   role: "user" | "assistant";
   content: string;
   trace?: TraceEntry[];
+  blocks?: UiBlock[];
 };
 
 export type TraceEntry =
@@ -84,3 +109,12 @@ export type TraceEntry =
   | { kind: "tool_call"; agent: string; tool: string; args: Record<string, unknown> }
   | { kind: "tool_result"; agent: string; tool: string; summary: string }
   | { kind: "error"; message: string };
+
+export type AgentName = "orchestrator" | "inventory" | "cost" | "deploy";
+export type AgentStatus = "idle" | "active" | "done";
+
+export type AgentRuntime = {
+  status: AgentStatus;
+  lastTool?: string;
+  toolsCalled: number;
+};
