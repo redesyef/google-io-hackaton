@@ -15,6 +15,7 @@ from collections.abc import AsyncGenerator
 from dataclasses import dataclass
 from typing import Any
 
+from agents.gemini_backend import model_function_call_part
 from agents.tools import COST_TOOLS, DEPLOY_TOOLS, INVENTORY_TOOLS, ToolResult
 from mcp.gcp_client import BaseGcpClient
 
@@ -126,7 +127,7 @@ async def run_sub_agent(
             yield SubAgentEvent("tool_call", {"agent": spec.name, "tool": fc_name, "args": fc_args})
 
             if fc_name not in spec.tools:
-                history.append({"role": "model", "parts": [{"function_call": response.function_call}]})
+                history.append({"role": "model", "parts": [model_function_call_part(response)]})
                 history.append({
                     "role": "user",
                     "parts": [{"function_response": {"name": fc_name, "response": {"error": "tool not available"}}}],
@@ -145,7 +146,7 @@ async def run_sub_agent(
             if result.diagram_patch:
                 yield SubAgentEvent("diagram_update", result.diagram_patch)
 
-            history.append({"role": "model", "parts": [{"function_call": response.function_call}]})
+            history.append({"role": "model", "parts": [model_function_call_part(response)]})
             history.append({
                 "role": "user",
                 "parts": [{"function_response": {"name": fc_name, "response": result.data}}],
