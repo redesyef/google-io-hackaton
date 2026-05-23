@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 
 import ChatPanel from "@/components/ChatPanel";
 import DiagramCanvas from "@/components/DiagramCanvas";
+import NodeDetailPanel from "@/components/NodeDetailPanel";
 import { apiUrl } from "@/lib/api";
 import { useStore } from "@/lib/store";
 import type { GcpStatus } from "@/lib/types";
@@ -125,6 +126,7 @@ export default function ChatPage() {
       </aside>
       <section className="bg-canvas-bg h-screen relative">
         <DiagramCanvas />
+        <NodeDetailPanel />
         <div className="absolute top-3 right-3 text-[10px] uppercase tracking-wider text-gray-500">
           {status.mode} · {status.project_id} · {status.region}
         </div>

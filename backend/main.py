@@ -1,7 +1,7 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-from api import auth, chat, gcp
+from api import auth, chat, diagram, gcp
 from core.config import settings
 
 app = FastAPI(title="CloudCanvas API", version="0.1.0")
@@ -17,6 +17,7 @@ app.add_middleware(
 app.include_router(auth.router)
 app.include_router(gcp.router)
 app.include_router(chat.router)
+app.include_router(diagram.router)
 
 
 @app.get("/health")
