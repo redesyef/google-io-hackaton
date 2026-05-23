@@ -15,8 +15,6 @@ import type { GcpStatus } from "@/lib/types";
 export default function ChatPage() {
   const router = useRouter();
   const [status, setStatus] = useState<GcpStatus | null>(null);
-  const seedInitialDiagram = useStore((s) => s.seedInitialDiagram);
-  const reset = useStore((s) => s.reset);
 
   useEffect(() => {
     let cancelled = false;
@@ -92,24 +90,27 @@ export default function ChatPage() {
           edges.push({ id: `e:${av.name}->${s.name}`, source: `vm:${av.name}`, target: `sql:${s.name}` });
         }
       }
-      reset();
-      seedInitialDiagram("Layer 1 · Architecture", nodes, edges);
+      useStore.getState().reset();
+      useStore.getState().seedInitialDiagram("Layer 1 · Architecture", nodes, edges);
     }
     load().catch(() => router.push("/login"));
     return () => {
       cancelled = true;
     };
-  }, [router, seedInitialDiagram, reset]);
+    // Run once on mount — actions are read via getState() so they don't
+    // need to be in deps, and router is stable from next/navigation.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   async function logout() {
     await fetch(apiUrl("/auth/logout"), { method: "POST", credentials: "include" });
-    reset();
+    useStore.getState().reset();
     router.push("/login");
   }
 
   async function switchProject() {
     await fetch(apiUrl("/gcp/disconnect"), { method: "POST", credentials: "include" });
-    reset();
+    useStore.getState().reset();
     router.push("/setup");
   }
 

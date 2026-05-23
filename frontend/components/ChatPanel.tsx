@@ -12,22 +12,20 @@ export default function ChatPanel({ projectId }: { projectId: string }) {
   const [input, setInput] = useState("");
   const messages = useStore((s) => s.messages);
   const streaming = useStore((s) => s.streaming);
-  const selectedNodeId = useStore((s) => s.selectedNodeId);
-  const activeNodes = useStore((s) =>
-    s.diagrams.find((d) => d.id === s.activeDiagramId)?.nodes ?? [],
-  );
+  // Use a value-based selector so it returns the same string across renders
+  // when nothing relevant changed — otherwise the ?? [] fallback would mint a
+  // fresh array reference and trigger a re-render loop.
+  const selectedLabel = useStore((s) => {
+    if (!s.selectedNodeId) return null;
+    const d = s.diagrams.find((x) => x.id === s.activeDiagramId);
+    return d?.nodes.find((n) => n.id === s.selectedNodeId)?.label ?? null;
+  });
 
   const scrollRef = useRef<HTMLDivElement | null>(null);
 
   useEffect(() => {
     scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight, behavior: "smooth" });
   }, [messages]);
-
-  function selectedNodeLabel(): string | null {
-    if (!selectedNodeId) return null;
-    const n = activeNodes.find((x) => x.id === selectedNodeId);
-    return n ? n.label : null;
-  }
 
   function submit() {
     const trimmed = input.trim();
@@ -67,10 +65,10 @@ export default function ChatPanel({ projectId }: { projectId: string }) {
       </div>
 
       <div className="border-t border-canvas-border p-3 space-y-2">
-        {selectedNodeLabel() && (
+        {selectedLabel && (
           <div className="text-[11px] px-2 py-1 rounded-full border border-canvas-accent text-canvas-accent inline-flex items-center gap-1">
             <Zap size={10} />
-            <span className="font-mono truncate max-w-[200px]">{selectedNodeLabel()}</span>
+            <span className="font-mono truncate max-w-[200px]">{selectedLabel}</span>
           </div>
         )}
         <div className="flex gap-2 items-end">
