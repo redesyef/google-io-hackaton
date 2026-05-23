@@ -24,6 +24,7 @@ from core.config import settings
 class GenResponse:
     text: str | None
     function_call: dict[str, Any] | None  # {"name": str, "args": dict}
+    thought_signature: bytes | None = None
 
 
 class GeminiBackend:
@@ -198,6 +199,16 @@ def _normalize_tool(tool: dict[str, Any]) -> dict[str, Any]:
     return out
 
 
+def model_function_call_part(response: "GenResponse") -> dict[str, Any]:
+    """Build the model-side history part for a function call, including the
+    thought_signature when present (required by Gemini 3.5+ to keep tool
+    use coherent across turns)."""
+    part: dict[str, Any] = {"function_call": response.function_call}
+    if response.thought_signature is not None:
+        part["thought_signature"] = response.thought_signature
+    return part
+
+
 def _parse_response(response: Any) -> GenResponse:
     try:
         candidate = response.candidates[0]
@@ -214,7 +225,12 @@ def _parse_response(response: Any) -> GenResponse:
                             args = json.loads(str(raw_args))
                         except Exception:
                             args = {}
-                return GenResponse(text=None, function_call={"name": fc.name, "args": args})
+                sig = getattr(part, "thought_signature", None)
+                return GenResponse(
+                    text=None,
+                    function_call={"name": fc.name, "args": args},
+                    thought_signature=sig,
+                )
         text = getattr(response, "text", None) or ""
         return GenResponse(text=text, function_call=None)
     except Exception:
