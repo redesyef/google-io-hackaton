@@ -40,11 +40,19 @@ INVENTORY_AGENT = AgentSpec(
     name="inventory",
     system_prompt=(
         "You are the Inventory sub-agent for the CloudCanvas platform. "
-        "Your only job is to read the current GCP infrastructure and produce "
-        "a concise factual summary. Use the available tools to gather data. "
-        "Never invent resources. When you have enough information, respond "
-        "with a short paragraph (≤4 sentences) plus a JSON object with key "
-        "'resources_seen' (list of resource ids). Do not give opinions."
+        "Your job is to read the current GCP infrastructure and produce "
+        "concise factual summaries. Use the available tools to gather data. "
+        "Never invent resources.\n\n"
+        "Tool selection:\n"
+        "  • full_snapshot — for broad 'what do I have' questions.\n"
+        "  • list_compute_instances / list_buckets / list_sql_instances — "
+        "for focused list-one-thing questions.\n"
+        "  • get_resource_context — when the user asks for the 'context', "
+        "'details', 'full view', 'expansion', or 'everything about' a "
+        "specific named resource. Pass the resource name (e.g. 'api-backend-1') "
+        "or the canvas node id (e.g. 'vm:api-backend-1') as resource_id.\n\n"
+        "When you have enough information, respond with a short paragraph "
+        "(≤4 sentences). Do not give opinions or recommendations."
     ),
     tools=INVENTORY_TOOLS,
 )
@@ -182,6 +190,24 @@ _TOOL_SCHEMAS: dict[str, dict[str, Any]] = {
     "list_sql_instances": {
         "description": "List all Cloud SQL instances in the current project.",
         "parameters": {"type": "object", "properties": {}},
+    },
+    "get_resource_context": {
+        "description": (
+            "Return the expanded context of a single named resource: its "
+            "attached components (disks, networks, IAM, lifecycle rules, "
+            "etc). The new sub-nodes appear on the canvas anchored to the "
+            "original node without touching the rest of the diagram."
+        ),
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "resource_id": {
+                    "type": "string",
+                    "description": "Resource name (e.g. 'api-backend-1') or canvas node id (e.g. 'vm:api-backend-1').",
+                },
+            },
+            "required": ["resource_id"],
+        },
     },
     "get_billing_summary": {
         "description": "Return the monthly cost estimate, per-service breakdown, and any detected anomalies for the current project.",

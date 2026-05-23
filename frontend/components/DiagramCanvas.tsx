@@ -15,40 +15,26 @@ import {
 } from "@xyflow/react";
 import "@xyflow/react/dist/style.css";
 import { useMemo } from "react";
-import { Cloud, Database, HardDrive, Network, Server } from "lucide-react";
 
+import { iconMetaFor } from "@/components/GcpIcons";
 import { useStore } from "@/lib/store";
 import type { DiagramNode } from "@/lib/types";
 
 type RFNode = Node<{ raw: DiagramNode; highlighted: boolean; selected: boolean }>;
 
-const KIND_META: Record<
-  string,
-  { icon: typeof Server; color: string; layer: number }
-> = {
-  load_balancer: { icon: Network, color: "#4285F4", layer: 0 },
-  compute: { icon: Server, color: "#34A853", layer: 1 },
-  storage: { icon: HardDrive, color: "#FBBC04", layer: 3 },
-  sql: { icon: Database, color: "#EA4335", layer: 2 },
-};
-
-const DEFAULT_META = { icon: Cloud, color: "#9aa0a6", layer: 2 } as const;
-
-function fallbackMeta(kind: string) {
-  return KIND_META[kind] ?? DEFAULT_META;
-}
-
 function ResourceNode({ data, selected }: NodeProps<RFNode>) {
   const raw = data.raw;
-  const meta = fallbackMeta(raw.kind);
+  const meta = iconMetaFor(raw.kind);
   const Icon = meta.icon;
   const ghost = !!raw.proposed;
   const highlighted = data.highlighted;
+  const isSub = !!raw.parent_id;
 
   return (
     <div
       className={[
-        "min-w-[180px] rounded-xl border bg-canvas-panel text-white shadow-lg transition-all",
+        "rounded-xl border bg-canvas-panel text-white shadow-lg transition-all",
+        isSub ? "min-w-[150px]" : "min-w-[200px]",
         ghost ? "border-dashed opacity-80" : "border-canvas-border",
         highlighted ? "ring-2 ring-canvas-warn animate-pulse" : "",
         selected ? "outline outline-2 outline-canvas-accent" : "",
@@ -56,23 +42,22 @@ function ResourceNode({ data, selected }: NodeProps<RFNode>) {
       style={{ borderColor: highlighted ? "#FBBC04" : undefined }}
     >
       <Handle type="target" position={Position.Top} className="!bg-canvas-border" />
-      <div className="flex items-center gap-3 px-3 py-2.5">
-        <div
-          className="h-9 w-9 rounded-lg flex items-center justify-center shrink-0"
-          style={{ background: `${meta.color}22`, color: meta.color }}
-        >
-          <Icon size={18} />
+      <div className={["flex items-center gap-2.5", isSub ? "px-2 py-1.5" : "px-3 py-2.5"].join(" ")}>
+        <div className="shrink-0">
+          <Icon size={isSub ? 22 : 28} />
         </div>
         <div className="flex-1 min-w-0">
-          <div className="text-sm font-medium truncate">{raw.label}</div>
+          <div className={["font-medium truncate", isSub ? "text-xs" : "text-sm"].join(" ")}>{raw.label}</div>
           {raw.subtitle ? (
-            <div className="text-xs text-gray-400 truncate">{raw.subtitle}</div>
+            <div className={["text-gray-400 truncate", isSub ? "text-[10px]" : "text-xs"].join(" ")}>
+              {raw.subtitle}
+            </div>
           ) : null}
         </div>
-        {raw.status ? (
+        {raw.status && !isSub ? (
           <span
             className={[
-              "text-[10px] uppercase tracking-wider px-1.5 py-0.5 rounded",
+              "text-[10px] uppercase tracking-wider px-1.5 py-0.5 rounded shrink-0",
               raw.status === "RUNNING" || raw.status === "RUNNABLE"
                 ? "bg-canvas-accent2/20 text-canvas-accent2"
                 : raw.status === "PROPOSED"
@@ -91,27 +76,40 @@ function ResourceNode({ data, selected }: NodeProps<RFNode>) {
 
 const nodeTypes = { resource: ResourceNode };
 
-function layoutNodes(nodes: DiagramNode[], highlightedIds: string[], selectedId: string | null): RFNode[] {
+const X_SPACING = 250;
+const Y_SPACING = 140;
+const SUB_RADIUS_X = 220;
+const SUB_RADIUS_Y = 80;
+
+function layoutNodes(
+  nodes: DiagramNode[],
+  highlightedIds: string[],
+  selectedId: string | null,
+): RFNode[] {
+  // Phase 1: primary (non-sub) nodes laid out in horizontal layers by kind.
+  const primaries = nodes.filter((n) => !n.parent_id);
+  const subs = nodes.filter((n) => n.parent_id);
+
   const layers = new Map<number, DiagramNode[]>();
-  for (const n of nodes) {
-    const layer = fallbackMeta(n.kind).layer;
+  for (const n of primaries) {
+    const layer = iconMetaFor(n.kind).layer;
     if (!layers.has(layer)) layers.set(layer, []);
     layers.get(layer)!.push(n);
   }
 
+  const positions = new Map<string, { x: number; y: number }>();
   const out: RFNode[] = [];
-  const X_SPACING = 240;
-  const Y_SPACING = 140;
-
   const sortedLayers = [...layers.keys()].sort((a, b) => a - b);
-  sortedLayers.forEach((layer) => {
+  sortedLayers.forEach((layer, layerIdx) => {
     const items = layers.get(layer)!;
     const offset = (items.length - 1) / 2;
     items.forEach((n, idx) => {
+      const pos = { x: (idx - offset) * X_SPACING, y: layerIdx * Y_SPACING };
+      positions.set(n.id, pos);
       out.push({
         id: n.id,
         type: "resource",
-        position: { x: (idx - offset) * X_SPACING, y: layer * Y_SPACING },
+        position: pos,
         data: {
           raw: n,
           highlighted: highlightedIds.includes(n.id) || highlightedIds.includes(n.label),
@@ -120,6 +118,48 @@ function layoutNodes(nodes: DiagramNode[], highlightedIds: string[], selectedId:
       });
     });
   });
+
+  // Phase 2: sub-nodes orbit their parent (top-right arc), grouped per parent.
+  const subsByParent = new Map<string, DiagramNode[]>();
+  for (const s of subs) {
+    const arr = subsByParent.get(s.parent_id!) ?? [];
+    arr.push(s);
+    subsByParent.set(s.parent_id!, arr);
+  }
+  for (const [parentId, siblings] of subsByParent) {
+    const parentPos = positions.get(parentId);
+    if (!parentPos) {
+      // Parent not in primaries — fall back to laying these out below their group.
+      siblings.forEach((s, i) => {
+        out.push({
+          id: s.id,
+          type: "resource",
+          position: { x: i * 180, y: 600 },
+          data: { raw: s, highlighted: highlightedIds.includes(s.id), selected: s.id === selectedId },
+        });
+      });
+      continue;
+    }
+    siblings.forEach((s, i) => {
+      const col = i % 2;          // 0 = right column, 1 = far right column
+      const row = Math.floor(i / 2);
+      const pos = {
+        x: parentPos.x + SUB_RADIUS_X + col * 170,
+        y: parentPos.y - SUB_RADIUS_Y + row * 70,
+      };
+      out.push({
+        id: s.id,
+        type: "resource",
+        position: pos,
+        data: {
+          raw: s,
+          highlighted: highlightedIds.includes(s.id) || highlightedIds.includes(s.label),
+          selected: s.id === selectedId,
+        },
+      });
+    });
+  }
+
   return out;
 }
 
@@ -136,13 +176,20 @@ function Inner() {
   );
   const rfEdges = useMemo<Edge[]>(
     () =>
-      edges.map((e) => ({
-        id: e.id,
-        source: e.source,
-        target: e.target,
-        animated: false,
-        style: { stroke: "#374151", strokeWidth: 1.5 },
-      })),
+      edges.map((e) => {
+        const isSubEdge = Boolean((e as { sub?: boolean }).sub);
+        return {
+          id: e.id,
+          source: e.source,
+          target: e.target,
+          animated: false,
+          style: {
+            stroke: isSubEdge ? "#4b5563" : "#374151",
+            strokeWidth: 1.5,
+            strokeDasharray: isSubEdge ? "4 3" : undefined,
+          },
+        };
+      }),
     [edges],
   );
 
@@ -169,7 +216,7 @@ function Inner() {
       <Background variant={BackgroundVariant.Dots} gap={20} size={1} color="#1f2937" />
       <Controls className="!bg-canvas-panel !border-canvas-border [&_button]:!bg-canvas-panel [&_button]:!border-canvas-border [&_button]:!text-white" />
       <MiniMap
-        nodeColor={(n) => fallbackMeta((n.data as RFNode["data"]).raw.kind).color}
+        nodeColor={(n) => iconMetaFor((n.data as RFNode["data"]).raw.kind).color}
         maskColor="rgba(11, 15, 23, 0.85)"
         className="!bg-canvas-panel !border !border-canvas-border"
       />

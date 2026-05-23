@@ -20,6 +20,9 @@ export default function ChatPanel({ projectId }: { projectId: string }) {
   const appendTrace = useStore((s) => s.appendTrace);
   const applyDiagramPatch = useStore((s) => s.applyDiagramPatch);
   const setStreaming = useStore((s) => s.setStreaming);
+  const resetAgents = useStore((s) => s.resetAgents);
+  const setAgentStatus = useStore((s) => s.setAgentStatus);
+  const recordAgentTool = useStore((s) => s.recordAgentTool);
 
   const scrollRef = useRef<HTMLDivElement | null>(null);
 
@@ -47,6 +50,8 @@ export default function ChatPanel({ projectId }: { projectId: string }) {
     const assistantId = newMessageId("a");
     addAssistantMessage(assistantId);
     setStreaming(true);
+    resetAgents();
+    setAgentStatus("orchestrator", "active");
 
     openChatStream(decorated, {
       onEvent: (evt) => {
@@ -54,13 +59,21 @@ export default function ChatPanel({ projectId }: { projectId: string }) {
           case "status":
             appendTrace(assistantId, { kind: "status", text: evt.data.text });
             break;
-          case "agent_start":
+          case "agent_start": {
+            const agent = evt.data.agent as "inventory" | "cost" | "deploy";
+            setAgentStatus(agent, "active");
             appendTrace(assistantId, { kind: "agent_start", agent: evt.data.agent });
             break;
-          case "agent_end":
+          }
+          case "agent_end": {
+            const agent = evt.data.agent as "inventory" | "cost" | "deploy";
+            setAgentStatus(agent, "done");
             appendTrace(assistantId, { kind: "agent_end", agent: evt.data.agent, summary: evt.data.summary });
             break;
-          case "tool_call":
+          }
+          case "tool_call": {
+            const agent = evt.data.agent as "inventory" | "cost" | "deploy";
+            recordAgentTool(agent, evt.data.tool);
             appendTrace(assistantId, {
               kind: "tool_call",
               agent: evt.data.agent,
@@ -68,6 +81,7 @@ export default function ChatPanel({ projectId }: { projectId: string }) {
               args: evt.data.args,
             });
             break;
+          }
           case "tool_result":
             appendTrace(assistantId, {
               kind: "tool_result",
@@ -83,9 +97,11 @@ export default function ChatPanel({ projectId }: { projectId: string }) {
             appendToAssistant(assistantId, evt.data.text);
             break;
           case "done":
+            setAgentStatus("orchestrator", "done");
             setStreaming(false);
             break;
           case "error":
+            setAgentStatus("orchestrator", "done");
             appendTrace(assistantId, { kind: "error", message: evt.data.message });
             appendToAssistant(assistantId, `\n\nError: ${evt.data.message}`);
             setStreaming(false);
@@ -156,6 +172,7 @@ export default function ChatPanel({ projectId }: { projectId: string }) {
                 "What's currently deployed in this project?",
                 "Where am I overspending? Suggest optimizations.",
                 "Propose a Redis cache in front of the orders database.",
+                "Show me the full context of api-backend-1.",
               ].map((q) => (
                 <button
                   key={q}

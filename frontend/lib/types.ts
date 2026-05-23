@@ -7,18 +7,46 @@ export type GcpStatus = {
 
 export type DiagramNode = {
   id: string;
-  kind: "compute" | "storage" | "sql" | "load_balancer" | string;
+  kind:
+    | "compute"
+    | "storage"
+    | "sql"
+    | "load_balancer"
+    | "disk"
+    | "network"
+    | "iam"
+    | "firewall"
+    | "backup"
+    | "database"
+    | "lifecycle"
+    | "cdn"
+    | "ssl"
+    | "service"
+    | "policy"
+    | "cache"
+    | string;
   label: string;
   subtitle?: string;
   status?: string;
   meta?: Record<string, unknown>;
   proposed?: boolean;
+  parent_id?: string;
+};
+
+export type AgentName = "orchestrator" | "inventory" | "cost" | "deploy";
+export type AgentStatus = "idle" | "active" | "done";
+
+export type AgentRuntime = {
+  status: AgentStatus;
+  lastTool?: string;
+  toolsCalled: number;
 };
 
 export type DiagramEdge = {
   id: string;
   source: string;
   target: string;
+  sub?: boolean;
 };
 
 export type DiagramPatch = {

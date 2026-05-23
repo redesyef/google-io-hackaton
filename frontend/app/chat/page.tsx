@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 
+import AgentsPanel from "@/components/AgentsPanel";
 import ChatPanel from "@/components/ChatPanel";
 import DiagramCanvas from "@/components/DiagramCanvas";
 import NodeDetailPanel from "@/components/NodeDetailPanel";
@@ -120,8 +121,8 @@ export default function ChatPage() {
   }
 
   return (
-    <main className="h-screen grid grid-cols-1 lg:grid-cols-[440px_1fr] overflow-hidden">
-      <aside className="border-r border-canvas-border bg-canvas-panel flex flex-col h-screen">
+    <main className="h-screen flex overflow-hidden">
+      <aside className="border-r border-canvas-border bg-canvas-panel flex flex-col h-screen w-[420px] shrink-0">
         <ChatPanel projectId={status.project_id ?? "—"} />
         <div className="flex border-t border-canvas-border text-xs text-gray-500">
           <button
@@ -140,7 +141,8 @@ export default function ChatPage() {
           </button>
         </div>
       </aside>
-      <section className="bg-canvas-bg h-screen relative">
+      <AgentsPanel />
+      <section className="bg-canvas-bg h-screen relative flex-1 min-w-0">
         <DiagramCanvas />
         <NodeDetailPanel />
         <div className="absolute top-3 right-3 text-[10px] uppercase tracking-wider text-gray-500">
