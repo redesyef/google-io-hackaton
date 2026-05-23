@@ -50,7 +50,10 @@ INVENTORY_AGENT = AgentSpec(
         "  • get_resource_context — when the user asks for the 'context', "
         "'details', 'full view', 'expansion', or 'everything about' a "
         "specific named resource. Pass the resource name (e.g. 'api-backend-1') "
-        "or the canvas node id (e.g. 'vm:api-backend-1') as resource_id.\n\n"
+        "or the canvas node id (e.g. 'vm:api-backend-1') as resource_id.\n"
+        "  • full_architecture_map — when the user asks for the 'complete' / "
+        "'full' / 'all layers' / 'whole architecture'. Returns layer-1 plus "
+        "every sub-component in one shot.\n\n"
         "When you have enough information, respond with a short paragraph "
         "(≤4 sentences). Do not give opinions or recommendations."
     ),
@@ -208,6 +211,16 @@ _TOOL_SCHEMAS: dict[str, dict[str, Any]] = {
             },
             "required": ["resource_id"],
         },
+    },
+    "full_architecture_map": {
+        "description": (
+            "Build the complete multi-layer architecture map in one shot: "
+            "primary resources (LB, VMs, SQL, buckets) PLUS the expanded "
+            "sub-graph (disks, networks, IAM, lifecycle, SSL, WAF, etc.) "
+            "for every one of them. Use this when the user asks for the "
+            "full / complete / all-layers architecture."
+        ),
+        "parameters": {"type": "object", "properties": {}},
     },
     "get_billing_summary": {
         "description": "Return the monthly cost estimate, per-service breakdown, and any detected anomalies for the current project.",

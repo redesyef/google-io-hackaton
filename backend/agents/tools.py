@@ -231,6 +231,42 @@ def tool_propose_deploy(client: BaseGcpClient, resource_kind: str, name: str, sp
     )
 
 
+def _expand_resource(parent_id: str, parent_kind: str, target: dict[str, Any]) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
+    """Build the sub-graph (attached components) for a single resource."""
+    sub_nodes: list[dict[str, Any]] = []
+    if parent_kind == "compute":
+        sub_nodes = [
+            {"id": f"{parent_id}/disk:boot", "kind": "disk", "label": f"{target['name']}-boot", "subtitle": "pd-balanced · 50GB", "parent_id": parent_id, "meta": {"size_gb": 50, "type": "pd-balanced"}},
+            {"id": f"{parent_id}/network:vpc-default", "kind": "network", "label": "vpc-default", "subtitle": "us-central1 · 10.128.0.0/20", "parent_id": parent_id, "meta": {"cidr": "10.128.0.0/20"}},
+            {"id": f"{parent_id}/sa:compute-default", "kind": "iam", "label": "compute-default", "subtitle": "Service account", "parent_id": parent_id, "meta": {"email": "default@compute.iam.gserviceaccount.com"}},
+            {"id": f"{parent_id}/firewall:allow-http", "kind": "firewall", "label": "allow-http", "subtitle": "TCP:80,443 from 0.0.0.0/0", "parent_id": parent_id, "meta": {"ports": [80, 443]}},
+        ]
+    elif parent_kind == "sql":
+        sub_nodes = [
+            {"id": f"{parent_id}/backup:auto", "kind": "backup", "label": "Automated backups", "subtitle": "7-day retention", "parent_id": parent_id},
+            {"id": f"{parent_id}/network:private", "kind": "network", "label": "private-ip", "subtitle": "VPC peering enabled", "parent_id": parent_id},
+            {"id": f"{parent_id}/db:orders", "kind": "database", "label": "orders", "subtitle": "Schema · 47 tables", "parent_id": parent_id},
+            {"id": f"{parent_id}/db:sessions", "kind": "database", "label": "sessions", "subtitle": "Schema · 4 tables", "parent_id": parent_id},
+        ]
+    elif parent_kind == "storage":
+        sub_nodes = [
+            {"id": f"{parent_id}/lifecycle:nearline-30d", "kind": "lifecycle", "label": "→ Nearline @ 30d", "subtitle": "Lifecycle rule", "parent_id": parent_id},
+            {"id": f"{parent_id}/iam:public-read", "kind": "iam", "label": "allUsers: read", "subtitle": "Public bucket", "parent_id": parent_id},
+            {"id": f"{parent_id}/cdn:edge", "kind": "cdn", "label": "Cloud CDN edge", "subtitle": "94 PoPs", "parent_id": parent_id},
+        ]
+    elif parent_kind == "load_balancer":
+        sub_nodes = [
+            {"id": f"{parent_id}/ssl:wildcard", "kind": "ssl", "label": "*.shopflow.app", "subtitle": "Managed SSL · valid 87d", "parent_id": parent_id},
+            {"id": f"{parent_id}/backend-svc", "kind": "service", "label": "web-backend-svc", "subtitle": "Backend service", "parent_id": parent_id},
+            {"id": f"{parent_id}/policy:waf", "kind": "policy", "label": "shopflow-waf", "subtitle": "Cloud Armor", "parent_id": parent_id},
+        ]
+    sub_edges = [
+        {"id": f"e:{parent_id}~{n['id']}", "source": parent_id, "target": n["id"], "sub": True}
+        for n in sub_nodes
+    ]
+    return sub_nodes, sub_edges
+
+
 def tool_get_resource_context(client: BaseGcpClient, resource_id: str) -> ToolResult:
     """Return the expanded context for a single resource: attached components,
     config, dependencies. Adds sub-nodes anchored to the parent on the canvas.
@@ -267,43 +303,7 @@ def tool_get_resource_context(client: BaseGcpClient, resource_id: str) -> ToolRe
         "load_balancer": f"lb:{target['name']}",
     }[parent_kind]
 
-    sub_nodes: list[dict[str, Any]] = []
-    sub_edges: list[dict[str, Any]] = []
-
-    if parent_kind == "compute":
-        sub_nodes = [
-            {"id": f"{parent_id}/disk:boot", "kind": "disk", "label": f"{target['name']}-boot", "subtitle": "pd-balanced · 50GB", "parent_id": parent_id, "meta": {"size_gb": 50, "type": "pd-balanced"}},
-            {"id": f"{parent_id}/network:vpc-default", "kind": "network", "label": "vpc-default", "subtitle": "us-central1 · 10.128.0.0/20", "parent_id": parent_id, "meta": {"cidr": "10.128.0.0/20"}},
-            {"id": f"{parent_id}/sa:compute-default", "kind": "iam", "label": "compute-default", "subtitle": "Service account", "parent_id": parent_id, "meta": {"email": "default@compute.iam.gserviceaccount.com"}},
-            {"id": f"{parent_id}/firewall:allow-http", "kind": "firewall", "label": "allow-http", "subtitle": "TCP:80,443 from 0.0.0.0/0", "parent_id": parent_id, "meta": {"ports": [80, 443]}},
-        ]
-    elif parent_kind == "sql":
-        sub_nodes = [
-            {"id": f"{parent_id}/backup:auto", "kind": "backup", "label": "Automated backups", "subtitle": "7-day retention", "parent_id": parent_id},
-            {"id": f"{parent_id}/network:private", "kind": "network", "label": "private-ip", "subtitle": "VPC peering enabled", "parent_id": parent_id},
-            {"id": f"{parent_id}/db:orders", "kind": "database", "label": "orders", "subtitle": "Schema · 47 tables", "parent_id": parent_id},
-            {"id": f"{parent_id}/db:sessions", "kind": "database", "label": "sessions", "subtitle": "Schema · 4 tables", "parent_id": parent_id},
-        ]
-    elif parent_kind == "storage":
-        sub_nodes = [
-            {"id": f"{parent_id}/lifecycle:nearline-30d", "kind": "lifecycle", "label": "→ Nearline @ 30d", "subtitle": "Lifecycle rule", "parent_id": parent_id},
-            {"id": f"{parent_id}/iam:public-read", "kind": "iam", "label": "allUsers: read", "subtitle": "Public bucket", "parent_id": parent_id},
-            {"id": f"{parent_id}/cdn:edge", "kind": "cdn", "label": "Cloud CDN edge", "subtitle": "94 PoPs", "parent_id": parent_id},
-        ]
-    elif parent_kind == "load_balancer":
-        sub_nodes = [
-            {"id": f"{parent_id}/ssl:wildcard", "kind": "ssl", "label": "*.shopflow.app", "subtitle": "Managed SSL · valid 87d", "parent_id": parent_id},
-            {"id": f"{parent_id}/backend-svc", "kind": "service", "label": "web-backend-svc", "subtitle": "Backend service", "parent_id": parent_id},
-            {"id": f"{parent_id}/policy:waf", "kind": "policy", "label": "shopflow-waf", "subtitle": "Cloud Armor", "parent_id": parent_id},
-        ]
-
-    for sn in sub_nodes:
-        sub_edges.append({
-            "id": f"e:{parent_id}~{sn['id']}",
-            "source": parent_id,
-            "target": sn["id"],
-            "sub": True,
-        })
+    sub_nodes, sub_edges = _expand_resource(parent_id, parent_kind, target)
 
     return ToolResult(
         data={"resource": target, "kind": parent_kind, "context_items": len(sub_nodes)},
@@ -317,12 +317,62 @@ def tool_get_resource_context(client: BaseGcpClient, resource_id: str) -> ToolRe
 # ---------------------------------------------------------------------------
 
 
+def tool_full_architecture_map(client: BaseGcpClient) -> ToolResult:
+    """Build the multi-layer architecture in one go: primary resources
+    (LB, VMs, SQL, buckets) PLUS the expanded sub-graph (disks, networks,
+    IAM, lifecycle, etc.) for each. One tool call → full canvas."""
+    snap = client.snapshot()
+    primary = snapshot_to_diagram(snap)
+    primary_nodes = primary["nodes_replace"]
+    primary_edges = primary["edges_replace"]
+
+    all_sub_nodes: list[dict[str, Any]] = []
+    all_sub_edges: list[dict[str, Any]] = []
+
+    for vm in snap.get("compute", []):
+        sn, se = _expand_resource(f"vm:{vm['name']}", "compute", vm)
+        all_sub_nodes.extend(sn); all_sub_edges.extend(se)
+    for s in snap.get("sql", []):
+        sn, se = _expand_resource(f"sql:{s['name']}", "sql", s)
+        all_sub_nodes.extend(sn); all_sub_edges.extend(se)
+    for b in snap.get("storage", []):
+        sn, se = _expand_resource(f"bucket:{b['name']}", "storage", b)
+        all_sub_nodes.extend(sn); all_sub_edges.extend(se)
+    for lb in snap.get("load_balancers", []):
+        sn, se = _expand_resource(f"lb:{lb['name']}", "load_balancer", lb)
+        all_sub_nodes.extend(sn); all_sub_edges.extend(se)
+
+    return ToolResult(
+        data={
+            "primary_count": len(primary_nodes),
+            "sub_count": len(all_sub_nodes),
+            "layers": {
+                "edge": [n["id"] for n in primary_nodes if n["kind"] == "load_balancer"],
+                "compute": [n["id"] for n in primary_nodes if n["kind"] == "compute"],
+                "data": [n["id"] for n in primary_nodes if n["kind"] in ("sql", "storage")],
+                "attached": [n["id"] for n in all_sub_nodes],
+            },
+        },
+        summary=(
+            f"Full architecture map built: layer-1 has {len(primary_nodes)} primary "
+            f"resources, plus {len(all_sub_nodes)} sub-components across every layer."
+        ),
+        diagram_patch={
+            "nodes_replace": primary_nodes,
+            "edges_replace": primary_edges,
+            "nodes_add": all_sub_nodes,
+            "edges_add": all_sub_edges,
+        },
+    )
+
+
 INVENTORY_TOOLS = {
     "full_snapshot": tool_full_snapshot,
     "list_compute_instances": tool_list_compute_instances,
     "list_buckets": tool_list_buckets,
     "list_sql_instances": tool_list_sql,
     "get_resource_context": tool_get_resource_context,
+    "full_architecture_map": tool_full_architecture_map,
 }
 
 COST_TOOLS = {
