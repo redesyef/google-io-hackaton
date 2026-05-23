@@ -63,8 +63,9 @@ class GeminiBackend:
 
         config_kwargs: dict[str, Any] = {"system_instruction": system_prompt}
         if tools:
+            normalized = [_normalize_tool(t) for t in tools]
             config_kwargs["tools"] = [
-                types.Tool(function_declarations=[types.FunctionDeclaration(**t) for t in tools])
+                types.Tool(function_declarations=[types.FunctionDeclaration(**t) for t in normalized])
             ]
 
         def _call() -> Any:
@@ -158,6 +159,43 @@ class GeminiBackend:
         for w in words:
             await asyncio.sleep(0.02)
             yield w + " "
+
+
+_TYPE_MAP = {
+    "string": "STRING",
+    "number": "NUMBER",
+    "integer": "INTEGER",
+    "boolean": "BOOLEAN",
+    "array": "ARRAY",
+    "object": "OBJECT",
+}
+
+
+def _normalize_schema(schema: Any) -> Any:
+    """Recursively uppercase JSON-Schema 'type' fields for google-genai.
+
+    The SDK validates `type` against an enum of upper-case literals
+    (STRING, OBJECT, ...). We author tool specs in lowercase JSON-Schema
+    convention and translate at the SDK boundary.
+    """
+    if isinstance(schema, dict):
+        out: dict[str, Any] = {}
+        for k, v in schema.items():
+            if k == "type" and isinstance(v, str) and v.lower() in _TYPE_MAP:
+                out[k] = _TYPE_MAP[v.lower()]
+            else:
+                out[k] = _normalize_schema(v)
+        return out
+    if isinstance(schema, list):
+        return [_normalize_schema(x) for x in schema]
+    return schema
+
+
+def _normalize_tool(tool: dict[str, Any]) -> dict[str, Any]:
+    out = dict(tool)
+    if "parameters" in out:
+        out["parameters"] = _normalize_schema(out["parameters"])
+    return out
 
 
 def _parse_response(response: Any) -> GenResponse:
