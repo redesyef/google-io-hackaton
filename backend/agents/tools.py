@@ -78,23 +78,105 @@ def snapshot_to_diagram(snapshot: dict[str, Any]) -> dict[str, Any]:
     for b in buckets:
         nodes.append(_bucket_node(b))
 
-    # Heuristic wiring for the demo: LB → web VMs → API VMs → SQL; web VMs → buckets.
-    web_vms = [vm for vm in vms if "web" in vm["name"].lower() or "frontend" in vm["name"].lower()]
-    api_vms = [vm for vm in vms if "api" in vm["name"].lower() or "backend" in vm["name"].lower()]
-    if not web_vms and not api_vms:
-        web_vms = vms
+    # Region-aware classification of VMs so a 14-instance fleet doesn't
+    # become a full mesh on the canvas.
+    def region_of(vm: dict[str, Any]) -> str:
+        z = vm.get("zone", "")
+        return z.rsplit("-", 1)[0] if "-" in z else z or "default"
 
+    def role_of(name: str) -> str:
+        n = name.lower()
+        if "web" in n or "frontend" in n:
+            return "web"
+        if "api" in n or "backend" in n:
+            return "api"
+        if "worker" in n or "job" in n:
+            return "worker"
+        if "cache" in n or "redis" in n:
+            return "cache"
+        if "bastion" in n or "ops" in n:
+            return "ops"
+        return "other"
+
+    by_role_region: dict[tuple[str, str], list[dict[str, Any]]] = {}
+    for vm in vms:
+        by_role_region.setdefault((role_of(vm["name"]), region_of(vm)), []).append(vm)
+
+    def first(role: str, region: str) -> dict[str, Any] | None:
+        items = by_role_region.get((role, region), [])
+        return items[0] if items else None
+
+    # LBs route to web VMs in the same region (fallback: any region).
     for lb in lbs:
-        for vm in web_vms:
+        lb_region = "europe-west1" if "eu" in lb["name"].lower() else "us-central1"
+        webs = by_role_region.get(("web", lb_region)) or by_role_region.get(("web", "us-central1")) or []
+        for vm in webs:
             edges.append({"id": f"e:{lb['name']}->{vm['name']}", "source": f"lb:{lb['name']}", "target": f"vm:{vm['name']}"})
-    for vm in web_vms:
-        for av in api_vms:
-            edges.append({"id": f"e:{vm['name']}->{av['name']}", "source": f"vm:{vm['name']}", "target": f"vm:{av['name']}"})
-        for b in buckets:
-            edges.append({"id": f"e:{vm['name']}->{b['name']}", "source": f"vm:{vm['name']}", "target": f"bucket:{b['name']}"})
-    for av in api_vms:
-        for s in sqls:
-            edges.append({"id": f"e:{av['name']}->{s['name']}", "source": f"vm:{av['name']}", "target": f"sql:{s['name']}"})
+        # EU LB also fronts EU API directly (no separate web tier in EU).
+        if lb_region == "europe-west1" and not webs:
+            for vm in by_role_region.get(("api", "europe-west1"), []):
+                edges.append({"id": f"e:{lb['name']}->{vm['name']}", "source": f"lb:{lb['name']}", "target": f"vm:{vm['name']}"})
+
+    # web → first cache (representative), web → first api (LB-style fan-in)
+    for (role, region), group in by_role_region.items():
+        if role != "web":
+            continue
+        cache_target = first("cache", region) or first("cache", "us-central1")
+        api_target = first("api", region) or first("api", "us-central1")
+        for vm in group:
+            if cache_target:
+                edges.append({"id": f"e:{vm['name']}->{cache_target['name']}", "source": f"vm:{vm['name']}", "target": f"vm:{cache_target['name']}"})
+            if api_target:
+                edges.append({"id": f"e:{vm['name']}->{api_target['name']}", "source": f"vm:{vm['name']}", "target": f"vm:{api_target['name']}"})
+
+    # api → primary SQL in same region (postgres preferred)
+    def pick_primary_sql(region: str) -> dict[str, Any] | None:
+        candidates = [s for s in sqls if s.get("region") == region and "replica" not in s["name"].lower()]
+        if not candidates:
+            candidates = [s for s in sqls if "replica" not in s["name"].lower()]
+        if not candidates:
+            return None
+        # Prefer postgres orders if present
+        for s in candidates:
+            if "orders" in s["name"].lower() and "POSTGRES" in s.get("database_version", ""):
+                return s
+        return candidates[0]
+
+    for (role, region), group in by_role_region.items():
+        if role != "api":
+            continue
+        sql_target = pick_primary_sql(region) or pick_primary_sql("us-central1")
+        for vm in group:
+            if sql_target:
+                edges.append({"id": f"e:{vm['name']}->{sql_target['name']}", "source": f"vm:{vm['name']}", "target": f"sql:{sql_target['name']}"})
+
+    # primary SQL → replica (read-only edge)
+    primary_orders = next((s for s in sqls if "orders" in s["name"].lower() and "replica" not in s["name"].lower()), None)
+    replica = next((s for s in sqls if "replica" in s["name"].lower()), None)
+    if primary_orders and replica:
+        edges.append({
+            "id": f"e:{primary_orders['name']}->{replica['name']}",
+            "source": f"sql:{primary_orders['name']}",
+            "target": f"sql:{replica['name']}",
+        })
+
+    # workers → primary orders DB + the warehouse if present
+    warehouse = next((s for s in sqls if "warehouse" in s["name"].lower() or "analytics" in s["name"].lower()), None)
+    for (role, _), group in by_role_region.items():
+        if role != "worker":
+            continue
+        for vm in group:
+            if primary_orders:
+                edges.append({"id": f"e:{vm['name']}->{primary_orders['name']}", "source": f"vm:{vm['name']}", "target": f"sql:{primary_orders['name']}"})
+            if warehouse:
+                edges.append({"id": f"e:{vm['name']}->{warehouse['name']}", "source": f"vm:{vm['name']}", "target": f"sql:{warehouse['name']}"})
+
+    # First web VM links to the static-asset bucket (representative for CDN origin)
+    web_us = by_role_region.get(("web", "us-central1"), [])
+    if web_us and buckets:
+        anchor = web_us[0]
+        for b in buckets[:3]:  # only the first 3 to avoid bucket spam
+            edges.append({"id": f"e:{anchor['name']}->{b['name']}", "source": f"vm:{anchor['name']}", "target": f"bucket:{b['name']}"})
 
     return {"nodes_replace": nodes, "edges_replace": edges}
 

@@ -156,47 +156,125 @@ class RealGcpClient(BaseGcpClient):
 # ---------------------------------------------------------------------------
 # Demo implementation (synthetic but realistic)
 # ---------------------------------------------------------------------------
+#
+# ShopFlow Inc — global e-commerce platform, ~12,500 monthly active users.
+# Multi-region: us-central1 (primary, prod traffic) and europe-west1 (DR +
+# EU GDPR-compliant data residency). The demo data is deliberately rich so
+# the agents have something interesting to talk about: idle EU capacity,
+# oversized read replica, cold-tier candidates, missing CUDs, anomalous
+# egress, etc.
+# ---------------------------------------------------------------------------
 
 
 DEMO_SNAPSHOT: dict[str, Any] = {
-    "project_id": "demo-shopflow-prod",
+    "project_id": "shopflow-prod-12345",
     "region": "us-central1",
     "compute": [
-        {"id": "web-1", "name": "web-frontend-1", "zone": "us-central1-a", "machine_type": "e2-medium", "status": "RUNNING"},
-        {"id": "web-2", "name": "web-frontend-2", "zone": "us-central1-b", "machine_type": "e2-medium", "status": "RUNNING"},
+        # Web tier — public-facing Next.js frontends (autoscaling MIG)
+        {"id": "web-1", "name": "web-frontend-1", "zone": "us-central1-a", "machine_type": "n2-standard-4", "status": "RUNNING"},
+        {"id": "web-2", "name": "web-frontend-2", "zone": "us-central1-b", "machine_type": "n2-standard-4", "status": "RUNNING"},
+        {"id": "web-3", "name": "web-frontend-3", "zone": "us-central1-c", "machine_type": "n2-standard-4", "status": "RUNNING"},
+        # API tier — Node.js backends behind internal LB
         {"id": "api-1", "name": "api-backend-1", "zone": "us-central1-a", "machine_type": "n2-standard-8", "status": "RUNNING"},
+        {"id": "api-2", "name": "api-backend-2", "zone": "us-central1-b", "machine_type": "n2-standard-8", "status": "RUNNING"},
+        {"id": "api-3", "name": "api-backend-3", "zone": "us-central1-c", "machine_type": "n2-standard-8", "status": "RUNNING"},
+        {"id": "api-4", "name": "api-backend-4", "zone": "us-central1-a", "machine_type": "n2-standard-8", "status": "RUNNING"},
+        # DR region (EU)
+        {"id": "api-eu-1", "name": "api-backend-eu-1", "zone": "europe-west1-b", "machine_type": "n2-standard-8", "status": "RUNNING"},
+        {"id": "api-eu-2", "name": "api-backend-eu-2", "zone": "europe-west1-c", "machine_type": "n2-standard-8", "status": "RUNNING"},
+        # Background worker tier (cron, Pub/Sub consumers)
+        {"id": "worker-1", "name": "worker-jobs-1", "zone": "us-central1-a", "machine_type": "n2-standard-4", "status": "RUNNING"},
+        {"id": "worker-2", "name": "worker-jobs-2", "zone": "us-central1-b", "machine_type": "n2-standard-4", "status": "RUNNING"},
+        # Self-hosted Redis cache (legacy — should migrate to Memorystore)
+        {"id": "cache-1", "name": "cache-redis-1", "zone": "us-central1-a", "machine_type": "n2-highmem-4", "status": "RUNNING"},
+        {"id": "cache-2", "name": "cache-redis-2", "zone": "us-central1-b", "machine_type": "n2-highmem-4", "status": "RUNNING"},
+        # Bastion / ops jump host
+        {"id": "bastion", "name": "ops-bastion", "zone": "us-central1-a", "machine_type": "e2-small", "status": "RUNNING"},
     ],
     "storage": [
         {"name": "shopflow-static-assets", "location": "US", "storage_class": "STANDARD"},
-        {"name": "shopflow-backups-cold", "location": "US-CENTRAL1", "storage_class": "NEARLINE"},
+        {"name": "shopflow-user-uploads", "location": "US", "storage_class": "STANDARD"},
+        {"name": "shopflow-product-images", "location": "MULTI-REGION-US", "storage_class": "STANDARD"},
+        {"name": "shopflow-invoices-pdf", "location": "US-CENTRAL1", "storage_class": "STANDARD"},
+        {"name": "shopflow-ml-models", "location": "US-CENTRAL1", "storage_class": "STANDARD"},
+        {"name": "shopflow-analytics-export", "location": "US-CENTRAL1", "storage_class": "STANDARD"},
+        {"name": "shopflow-logs-archive", "location": "US-CENTRAL1", "storage_class": "NEARLINE"},
+        {"name": "shopflow-backups-cold", "location": "US-CENTRAL1", "storage_class": "COLDLINE"},
+        # GDPR-compliant EU residency
+        {"name": "shopflow-eu-user-data", "location": "EUROPE-WEST1", "storage_class": "STANDARD"},
     ],
     "sql": [
-        {"name": "shopflow-orders-db", "database_version": "POSTGRES_15", "tier": "db-custom-4-16384", "region": "us-central1", "state": "RUNNABLE"},
+        {"name": "shopflow-orders-db", "database_version": "POSTGRES_15", "tier": "db-custom-8-32768", "region": "us-central1", "state": "RUNNABLE"},
+        {"name": "shopflow-orders-db-replica", "database_version": "POSTGRES_15", "tier": "db-custom-8-32768", "region": "us-central1", "state": "RUNNABLE"},
+        {"name": "shopflow-sessions-db", "database_version": "MYSQL_8_0", "tier": "db-custom-4-16384", "region": "us-central1", "state": "RUNNABLE"},
+        {"name": "shopflow-analytics-warehouse", "database_version": "POSTGRES_15", "tier": "db-custom-16-65536", "region": "us-central1", "state": "RUNNABLE"},
+        {"name": "shopflow-eu-orders-db", "database_version": "POSTGRES_15", "tier": "db-custom-4-16384", "region": "europe-west1", "state": "RUNNABLE"},
     ],
     "load_balancers": [
-        {"name": "shopflow-lb", "ip_address": "35.190.12.45", "port_range": "443"},
+        {"name": "shopflow-global-lb", "ip_address": "35.190.12.45", "port_range": "443"},
+        {"name": "shopflow-internal-api-lb", "ip_address": "10.128.0.18", "port_range": "8080"},
+        {"name": "shopflow-eu-lb", "ip_address": "35.241.7.92", "port_range": "443"},
     ],
     "billing": {
         "status": "ok",
-        "monthly_estimate_usd": 1842.50,
+        "monthly_estimate_usd": 24582.40,
         "by_service": {
-            "Compute Engine": 612.10,
-            "Cloud SQL": 894.00,
-            "Cloud Storage": 41.40,
-            "Networking": 294.00,
+            "Compute Engine": 8420.50,
+            "Cloud SQL": 7280.00,
+            "Networking": 4180.30,
+            "BigQuery": 1840.00,
+            "Cloud Storage": 1410.80,
+            "Cloud Logging": 980.20,
+            "Cloud Monitoring": 470.60,
         },
         "anomalies": [
             {
-                "resource": "api-backend-1",
+                "resource": "api-backend-eu-1",
                 "service": "Compute Engine",
                 "severity": "high",
-                "description": "n2-standard-8 averaging 12% CPU over 30 days. Right-sizing to n2-standard-2 saves ~$210/month.",
+                "description": "EU backup region averaging 4% CPU over 30 days (failover never triggered). Right-sizing to n2-standard-2 + stopping api-backend-eu-2 saves ~$680/month.",
+            },
+            {
+                "resource": "shopflow-orders-db-replica",
+                "service": "Cloud SQL",
+                "severity": "high",
+                "description": "Read replica is identical tier to primary (db-custom-8-32768) but only serves 18% of read traffic. Downsizing to db-custom-4-16384 saves ~$480/month with no measurable latency impact.",
+            },
+            {
+                "resource": "shopflow-logs-archive",
+                "service": "Cloud Storage",
+                "severity": "high",
+                "description": "412 GB of logs older than 90 days still on NEARLINE. Lifecycle rule → COLDLINE @ 90d → ARCHIVE @ 180d would save ~$210/month.",
+            },
+            {
+                "resource": "cache-redis-1",
+                "service": "Compute Engine",
+                "severity": "medium",
+                "description": "Self-managed Redis on n2-highmem-4. Migrating to Memorystore Standard (5GB) would cut $310/month and remove the manual ops burden.",
             },
             {
                 "resource": "shopflow-orders-db",
                 "service": "Cloud SQL",
                 "severity": "medium",
-                "description": "No read replica + no automated backup tier optimization. Adding a read replica would offload ~40% of read traffic.",
+                "description": "No committed-use discount applied. A 1-year CUD across primary + analytics-warehouse would unlock ~$1,200/month (≈17%) savings.",
+            },
+            {
+                "resource": "shopflow-product-images",
+                "service": "Networking",
+                "severity": "medium",
+                "description": "Egress to europe-west1 averages 4.2 TB/month — Cloud CDN edge caching is OFF for this bucket. Enabling would save ~$380/month and cut p95 latency by 60%.",
+            },
+            {
+                "resource": "worker-jobs-2",
+                "service": "Compute Engine",
+                "severity": "low",
+                "description": "Pub/Sub queue depth averages <2 messages; worker-jobs-2 is mostly idle. Cloud Run Jobs with --max-instances=3 would replace both workers and save ~$95/month.",
+            },
+            {
+                "resource": "shopflow-analytics-warehouse",
+                "service": "BigQuery",
+                "severity": "low",
+                "description": "23% of BigQuery slots used on repeated full-table scans of `order_events`. A partition-by-date + cluster-by-region rewrite would cut ~$140/month.",
             },
         ],
     },
@@ -204,14 +282,15 @@ DEMO_SNAPSHOT: dict[str, Any] = {
 
 
 class DemoGcpClient(BaseGcpClient):
-    def __init__(self, project_id: str = "demo-shopflow-prod", region: str = "us-central1") -> None:
+    def __init__(self, project_id: str = "shopflow-prod-12345", region: str = "us-central1") -> None:
         self.project_id = project_id
         self.region = region
 
     def list_projects(self) -> list[dict[str, str]]:
         return [
-            {"projectId": "demo-shopflow-prod", "name": "ShopFlow Production"},
-            {"projectId": "demo-shopflow-staging", "name": "ShopFlow Staging"},
+            {"projectId": "shopflow-prod-12345", "name": "ShopFlow Production (US + EU)"},
+            {"projectId": "shopflow-staging-12345", "name": "ShopFlow Staging"},
+            {"projectId": "shopflow-data-warehouse", "name": "ShopFlow Data Warehouse"},
         ]
 
     def list_compute_instances(self) -> list[dict[str, Any]]:
