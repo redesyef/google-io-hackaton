@@ -105,6 +105,12 @@ export default function ChatPage() {
     router.push("/login");
   }
 
+  async function switchProject() {
+    await fetch(apiUrl("/gcp/disconnect"), { method: "POST", credentials: "include" });
+    reset();
+    router.push("/setup");
+  }
+
   if (!status) {
     return (
       <main className="min-h-screen flex items-center justify-center text-gray-400">
@@ -117,12 +123,22 @@ export default function ChatPage() {
     <main className="h-screen grid grid-cols-1 lg:grid-cols-[440px_1fr] overflow-hidden">
       <aside className="border-r border-canvas-border bg-canvas-panel flex flex-col h-screen">
         <ChatPanel projectId={status.project_id ?? "—"} />
-        <button
-          onClick={logout}
-          className="text-xs text-gray-500 hover:text-gray-300 py-2 border-t border-canvas-border"
-        >
-          Sign out
-        </button>
+        <div className="flex border-t border-canvas-border text-xs text-gray-500">
+          <button
+            onClick={switchProject}
+            className="flex-1 py-2 hover:text-canvas-accent hover:bg-canvas-bg transition"
+            title="Disconnect this project and connect a different one"
+          >
+            Switch project
+          </button>
+          <div className="w-px bg-canvas-border" />
+          <button
+            onClick={logout}
+            className="flex-1 py-2 hover:text-gray-300 transition"
+          >
+            Sign out
+          </button>
+        </div>
       </aside>
       <section className="bg-canvas-bg h-screen relative">
         <DiagramCanvas />

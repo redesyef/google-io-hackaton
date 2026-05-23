@@ -120,6 +120,17 @@ def status_(user: str = Depends(current_user)) -> dict[str, Any]:
     }
 
 
+@router.post("/disconnect")
+def disconnect(user: str = Depends(current_user)) -> dict[str, bool]:
+    """Clear stored GCP credentials so the user can connect a different account."""
+    session = store.get_or_create(user)
+    session.gcp_credentials = None
+    session.gcp_project_id = None
+    session.diagram_state = {"nodes": [], "edges": []}
+    session.chat_history = []
+    return {"ok": True}
+
+
 @router.get("/snapshot")
 def snapshot(user: str = Depends(current_user)) -> dict[str, Any]:
     """Full inventory snapshot — used by the frontend to seed the diagram."""
