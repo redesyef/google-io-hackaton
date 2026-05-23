@@ -64,6 +64,7 @@ class GeminiBackend:
         from google.genai import types  # type: ignore
 
         config_kwargs: dict[str, Any] = {"system_instruction": system_prompt}
+        _apply_no_thinking(config_kwargs, types)
         if tools:
             normalized = [_normalize_tool(t) for t in tools]
             config_kwargs["tools"] = [
@@ -93,10 +94,12 @@ class GeminiBackend:
         from google.genai import types  # type: ignore
 
         def _stream() -> Any:
+            cfg_kwargs: dict[str, Any] = {"system_instruction": system_prompt}
+            _apply_no_thinking(cfg_kwargs, types)
             return self._client.models.generate_content_stream(
                 model=settings.gemini_model,
                 contents=history,
-                config=types.GenerateContentConfig(system_instruction=system_prompt),
+                config=types.GenerateContentConfig(**cfg_kwargs),
             )
 
         stream = await asyncio.to_thread(_stream)
@@ -198,6 +201,28 @@ def _normalize_tool(tool: dict[str, Any]) -> dict[str, Any]:
     if "parameters" in out:
         out["parameters"] = _normalize_schema(out["parameters"])
     return out
+
+
+def _apply_no_thinking(config_kwargs: dict[str, Any], types_module: Any) -> None:
+    """Disable thinking on Gemini 3.5+ so the API does not require us to
+    round-trip thought_signature bytes through the conversation history.
+
+    The signature round-trip is fragile when history mixes dict and typed
+    Content entries (function-call signatures get stripped during SDK
+    re-serialization). Turning thinking off removes the requirement and
+    keeps our multi-agent loop reliable. Best-effort: silently no-op on
+    SDK versions that do not expose ThinkingConfig.
+    """
+    ThinkingConfig = getattr(types_module, "ThinkingConfig", None)
+    if ThinkingConfig is None:
+        return
+    try:
+        config_kwargs["thinking_config"] = ThinkingConfig(thinking_budget=0)
+    except Exception:
+        try:
+            config_kwargs["thinking_config"] = ThinkingConfig(include_thoughts=False)
+        except Exception:
+            pass
 
 
 def model_turn_for_history(response: "GenResponse") -> Any:
