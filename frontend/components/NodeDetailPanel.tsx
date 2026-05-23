@@ -7,15 +7,18 @@ import { apiUrl } from "@/lib/api";
 import { useStore } from "@/lib/store";
 
 export default function NodeDetailPanel() {
-  const selectedId = useStore((s) => s.selectedNodeId);
-  const active = useStore((s) => s.diagrams.find((d) => d.id === s.activeDiagramId));
+  // Resolve the selected node directly so the selector returns a stable
+  // reference (the node object) or null, never a fresh array.
+  const node = useStore((s) => {
+    if (!s.selectedNodeId) return null;
+    const d = s.diagrams.find((x) => x.id === s.activeDiagramId);
+    return d?.nodes.find((n) => n.id === s.selectedNodeId) ?? null;
+  });
   const setSelectedNode = useStore((s) => s.setSelectedNode);
   const applyDiagramPatch = useStore((s) => s.applyDiagramPatch);
   const [working, setWorking] = useState<"apply" | "discard" | null>(null);
   const [message, setMessage] = useState<string | null>(null);
 
-  const nodes = active?.nodes ?? [];
-  const node = nodes.find((n) => n.id === selectedId);
   if (!node) return null;
 
   async function applyProposal() {
@@ -52,8 +55,11 @@ export default function NodeDetailPanel() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ node_id: node.id }),
       });
-      // Remove the node locally
-      const remaining = nodes.filter((n) => n.id !== node.id);
+      // Remove the node locally from the currently active diagram.
+      const active = useStore.getState().diagrams.find(
+        (d) => d.id === useStore.getState().activeDiagramId,
+      );
+      const remaining = (active?.nodes ?? []).filter((n) => n.id !== node.id);
       applyDiagramPatch({ nodes_replace: remaining });
       setSelectedNode(null);
     } finally {

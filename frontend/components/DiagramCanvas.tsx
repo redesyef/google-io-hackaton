@@ -18,7 +18,7 @@ import { useMemo } from "react";
 
 import { iconMetaFor } from "@/components/GcpIcons";
 import { useStore } from "@/lib/store";
-import type { DiagramNode } from "@/lib/types";
+import type { DiagramEdge as DiagramEdgeT, DiagramNode } from "@/lib/types";
 
 type RFNode = Node<{ raw: DiagramNode; highlighted: boolean; selected: boolean }>;
 
@@ -163,15 +163,28 @@ function layoutNodes(
   return out;
 }
 
+const EMPTY_NODES: DiagramNode[] = [];
+const EMPTY_EDGES: DiagramEdgeT[] = [];
+const EMPTY_IDS: string[] = [];
+
 function Inner() {
-  const active = useStore((s) =>
-    s.diagrams.find((d) => d.id === s.activeDiagramId),
-  );
+  // Each selector returns a stable reference: either the array stored on the
+  // active Diagram, or one of the module-level EMPTY_* constants. This
+  // prevents fresh `?? []` allocations from triggering re-render loops.
+  const nodes = useStore((s) => {
+    const d = s.diagrams.find((x) => x.id === s.activeDiagramId);
+    return d?.nodes ?? EMPTY_NODES;
+  });
+  const edges = useStore((s) => {
+    const d = s.diagrams.find((x) => x.id === s.activeDiagramId);
+    return d?.edges ?? EMPTY_EDGES;
+  });
+  const highlightedIds = useStore((s) => {
+    const d = s.diagrams.find((x) => x.id === s.activeDiagramId);
+    return d?.highlightedIds ?? EMPTY_IDS;
+  });
   const selectedId = useStore((s) => s.selectedNodeId);
   const setSelectedNode = useStore((s) => s.setSelectedNode);
-  const nodes = active?.nodes ?? [];
-  const edges = active?.edges ?? [];
-  const highlightedIds = active?.highlightedIds ?? [];
 
   const rfNodes = useMemo(
     () => layoutNodes(nodes, highlightedIds, selectedId),
