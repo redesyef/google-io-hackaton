@@ -2,7 +2,9 @@
 
 import { useRouter } from "next/navigation";
 import { useEffect, useRef, useState } from "react";
-import { Check, Copy, FileJson, Info, Loader2, Upload } from "lucide-react";
+import { Check, Copy, ExternalLink, FileJson, Info, Loader2, Upload } from "lucide-react";
+
+const GCP_CONSOLE_KEYS_URL = "https://console.cloud.google.com/iam-admin/serviceaccounts";
 
 import { apiUrl } from "@/lib/api";
 
@@ -125,13 +127,22 @@ export default function SetupPage() {
   return (
     <main className="min-h-screen flex items-center justify-center px-6 py-10">
       <div className="w-full max-w-3xl space-y-6">
-        <div className="space-y-1">
+        <div className="space-y-2">
           <h1 className="text-3xl font-semibold">Connect Google Cloud</h1>
           <p className="text-sm text-gray-400">
             Upload a <strong>Service Account JSON key</strong> — GCP's standard
             method for programmatic access. Credentials stay in memory and
             are never written to disk.
           </p>
+          <a
+            href={GCP_CONSOLE_KEYS_URL}
+            target="_blank"
+            rel="noreferrer"
+            className="inline-flex items-center gap-1.5 text-sm text-canvas-accent hover:underline"
+          >
+            Open Service Accounts in Google Cloud Console
+            <ExternalLink size={12} />
+          </a>
         </div>
 
         {/* Primary: file upload + paste */}
@@ -168,9 +179,24 @@ export default function SetupPage() {
                 </div>
               </div>
               <div className="text-xs text-gray-300 space-y-1 pt-2 border-t border-canvas-border">
-                <p className="font-medium text-white">Option B — Cloud Console:</p>
+                <div className="flex items-center justify-between">
+                  <p className="font-medium text-white">Option B — Cloud Console:</p>
+                  <a
+                    href={GCP_CONSOLE_KEYS_URL}
+                    target="_blank"
+                    rel="noreferrer"
+                    className="text-canvas-accent hover:underline inline-flex items-center gap-1 text-[11px]"
+                  >
+                    Open console <ExternalLink size={10} />
+                  </a>
+                </div>
                 <ol className="list-decimal pl-4 space-y-0.5 text-gray-400">
-                  <li>Console → IAM & Admin → Service Accounts → Create</li>
+                  <li>
+                    <a href={GCP_CONSOLE_KEYS_URL} target="_blank" rel="noreferrer" className="text-canvas-accent hover:underline">
+                      IAM & Admin → Service Accounts
+                    </a>
+                    {" "}→ Create
+                  </li>
                   <li>Grant roles: <code className="text-canvas-accent">Viewer</code> + <code className="text-canvas-accent">Billing Account Viewer</code></li>
                   <li>Open the SA → Keys → Add Key → Create new key → JSON</li>
                   <li>Drop the downloaded file below</li>
