@@ -12,6 +12,7 @@ from pydantic import BaseModel
 
 from core.security import current_user
 from core.session_store import store
+from mcp.gcp_client import DemoGcpClient, RealGcpClient, build_client
 
 router = APIRouter(prefix="/gcp", tags=["gcp"])
 
@@ -33,12 +34,6 @@ class SelectProjectRequest(BaseModel):
     region: str = "us-central1"
 
 
-DEMO_PROJECTS = [
-    {"projectId": "demo-shopflow-prod", "name": "ShopFlow Production"},
-    {"projectId": "demo-shopflow-staging", "name": "ShopFlow Staging"},
-]
-
-
 @router.post("/credentials", response_model=CredentialsResponse)
 def set_credentials(
     payload: CredentialsRequest,
@@ -47,13 +42,15 @@ def set_credentials(
     session = store.get_or_create(user)
 
     if payload.demo_mode:
+        demo = DemoGcpClient()
         session.gcp_credentials = {"_demo": True}
-        session.gcp_project_id = DEMO_PROJECTS[0]["projectId"]
+        session.gcp_project_id = demo.project_id
+        session.gcp_region = demo.region
         return CredentialsResponse(
             ok=True,
             mode="demo",
-            project_id=session.gcp_project_id,
-            available_projects=DEMO_PROJECTS,
+            project_id=demo.project_id,
+            available_projects=demo.list_projects(),
         )
 
     if not payload.service_account_json:
@@ -71,12 +68,18 @@ def set_credentials(
             detail=f"service account JSON missing fields: {sorted(missing)}",
         )
 
-    session.gcp_credentials = sa
-    session.gcp_project_id = sa.get("project_id")
+    try:
+        client = RealGcpClient(sa, project_id=sa["project_id"])
+        projects = client.list_projects()
+    except Exception as exc:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"failed to authenticate with GCP: {exc.__class__.__name__}: {exc}",
+        ) from exc
 
-    # In real mode we'd call Resource Manager to list projects; for now we
-    # surface the SA's own project plus the demo projects as fallback.
-    projects = [{"projectId": sa["project_id"], "name": sa["project_id"]}]
+    session.gcp_credentials = sa
+    session.gcp_project_id = sa["project_id"]
+
     return CredentialsResponse(
         ok=True,
         mode="real",
@@ -98,6 +101,7 @@ def select_project(
         )
     session.gcp_project_id = payload.project_id
     session.gcp_region = payload.region
+    session.diagram_state = {"nodes": [], "edges": []}
     return {"project_id": payload.project_id, "region": payload.region}
 
 
@@ -105,9 +109,23 @@ def select_project(
 def status_(user: str = Depends(current_user)) -> dict[str, Any]:
     session = store.get_or_create(user)
     has_creds = session.gcp_credentials is not None
+    mode = None
+    if has_creds:
+        mode = "demo" if session.gcp_credentials.get("_demo") else "real"
     return {
         "configured": has_creds,
-        "mode": "demo" if has_creds and session.gcp_credentials.get("_demo") else ("real" if has_creds else None),
+        "mode": mode,
         "project_id": session.gcp_project_id,
         "region": session.gcp_region,
     }
+
+
+@router.get("/snapshot")
+def snapshot(user: str = Depends(current_user)) -> dict[str, Any]:
+    """Full inventory snapshot — used by the frontend to seed the diagram."""
+    session = store.get_or_create(user)
+    try:
+        client = build_client(session.gcp_credentials, session.gcp_project_id, session.gcp_region)
+    except ValueError as exc:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
+    return client.snapshot()
