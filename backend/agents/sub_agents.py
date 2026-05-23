@@ -15,7 +15,11 @@ from collections.abc import AsyncGenerator
 from dataclasses import dataclass
 from typing import Any
 
-from agents.gemini_backend import model_turn_for_history
+from agents.gemini_backend import (
+    make_user_function_response,
+    make_user_text,
+    model_turn_for_history,
+)
 from agents.tools import COST_TOOLS, DEPLOY_TOOLS, INVENTORY_TOOLS, ToolResult
 from mcp.gcp_client import BaseGcpClient
 
@@ -111,7 +115,7 @@ async def run_sub_agent(
     yield SubAgentEvent("agent_start", {"agent": spec.name})
 
     tool_specs = _tool_specs_for(spec)
-    history: list[dict[str, Any]] = [{"role": "user", "parts": [{"text": query}]}]
+    history: list[Any] = [make_user_text(query)]
     collected: list[ToolResult] = []
 
     for _ in range(4):  # safety cap on tool-call turns
@@ -128,10 +132,7 @@ async def run_sub_agent(
 
             if fc_name not in spec.tools:
                 history.append(model_turn_for_history(response))
-                history.append({
-                    "role": "user",
-                    "parts": [{"function_response": {"name": fc_name, "response": {"error": "tool not available"}}}],
-                })
+                history.append(make_user_function_response(fc_name, {"error": "tool not available"}))
                 continue
 
             try:
@@ -147,10 +148,7 @@ async def run_sub_agent(
                 yield SubAgentEvent("diagram_update", result.diagram_patch)
 
             history.append(model_turn_for_history(response))
-            history.append({
-                "role": "user",
-                "parts": [{"function_response": {"name": fc_name, "response": result.data}}],
-            })
+            history.append(make_user_function_response(fc_name, result.data))
             continue
 
         text = response.text or "(no answer)"

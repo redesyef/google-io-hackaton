@@ -25,7 +25,12 @@ import json
 from collections.abc import AsyncGenerator
 from typing import Any
 
-from agents.gemini_backend import GeminiBackend, model_turn_for_history
+from agents.gemini_backend import (
+    GeminiBackend,
+    make_user_function_response,
+    make_user_text,
+    model_turn_for_history,
+)
 from agents.sub_agents import AGENT_REGISTRY, SubAgentEvent, SubAgentOutcome, run_sub_agent
 from mcp.gcp_client import BaseGcpClient
 
@@ -108,10 +113,12 @@ async def run_orchestrator(
 
     yield {"event": "status", "data": {"text": "Orchestrator received message…"}}
 
-    history: list[dict[str, Any]] = []
+    history: list[Any] = []
     for turn in chat_history[-6:]:
-        history.append({"role": turn["role"], "parts": [{"text": turn["content"]}]})
-    history.append({"role": "user", "parts": [{"text": user_message}]})
+        # Past turns are flattened to plain user/model text — we don't have the
+        # original raw Content for them, but the model still gets useful context.
+        history.append(make_user_text(turn["content"]) if turn["role"] == "user" else make_user_text(f"(previous assistant) {turn['content']}"))
+    history.append(make_user_text(user_message))
 
     sub_agent_summaries: list[str] = []
 
@@ -155,15 +162,7 @@ async def run_orchestrator(
         sub_agent_summaries.append(f"[{agent_name}] {outcome.text}")
 
         history.append(model_turn_for_history(response))
-        history.append({
-            "role": "user",
-            "parts": [{
-                "function_response": {
-                    "name": fc_name,
-                    "response": {"summary": outcome.text},
-                }
-            }],
-        })
+        history.append(make_user_function_response(fc_name, {"summary": outcome.text}))
 
     # Final synthesis — stream tokens to the client.
     yield {"event": "status", "data": {"text": "Synthesizing answer…"}}
@@ -173,7 +172,7 @@ async def run_orchestrator(
         "single concise answer to the user. Do not call any more tools. "
         "Use markdown for structure when helpful."
     )
-    history.append({"role": "user", "parts": [{"text": synthesis_prompt}]})
+    history.append(make_user_text(synthesis_prompt))
 
     final_text_parts: list[str] = []
     async for chunk in gemini.stream_text(
