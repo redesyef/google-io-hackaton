@@ -1,9 +1,10 @@
 "use client";
 
-import { Check, X } from "lucide-react";
+import { Check, Scan, X } from "lucide-react";
 import { useState } from "react";
 
 import { apiUrl } from "@/lib/api";
+import { sendChatMessage } from "@/lib/chat";
 import { useStore } from "@/lib/store";
 
 export default function NodeDetailPanel() {
@@ -14,12 +15,20 @@ export default function NodeDetailPanel() {
     const d = s.diagrams.find((x) => x.id === s.activeDiagramId);
     return d?.nodes.find((n) => n.id === s.selectedNodeId) ?? null;
   });
+  const streaming = useStore((s) => s.streaming);
   const setSelectedNode = useStore((s) => s.setSelectedNode);
   const applyDiagramPatch = useStore((s) => s.applyDiagramPatch);
   const [working, setWorking] = useState<"apply" | "discard" | null>(null);
   const [message, setMessage] = useState<string | null>(null);
 
   if (!node) return null;
+
+  function expandContext() {
+    if (!node) return;
+    sendChatMessage(`Show me the full context of ${node.label}.`);
+  }
+
+  const isPrimary = !node.parent_id && !node.proposed;
 
   async function applyProposal() {
     if (!node) return;
@@ -114,6 +123,21 @@ export default function NodeDetailPanel() {
           >
             {working === "discard" ? "Discarding…" : "Discard"}
           </button>
+        </div>
+      )}
+
+      {isPrimary && (
+        <div className="p-3">
+          <button
+            onClick={expandContext}
+            disabled={streaming}
+            className="w-full py-2 text-xs rounded-md bg-canvas-accent text-white hover:opacity-90 transition flex items-center justify-center gap-1.5 disabled:opacity-50 disabled:cursor-not-allowed"
+          >
+            <Scan size={12} /> {streaming ? "Working…" : "Expand context in new tab"}
+          </button>
+          <p className="text-[10px] text-gray-500 mt-1.5 text-center">
+            Drills into this service's attached components.
+          </p>
         </div>
       )}
 

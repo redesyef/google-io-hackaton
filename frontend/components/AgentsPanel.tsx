@@ -1,6 +1,6 @@
 "use client";
 
-import { Boxes, DollarSign, Layers3, Network } from "lucide-react";
+import { Boxes, DollarSign, Network } from "lucide-react";
 
 import { sendChatMessage } from "@/lib/chat";
 import { useStore } from "@/lib/store";
@@ -44,11 +44,6 @@ const AGENT_META: AgentMeta[] = [
     toolsCount: 2,
   },
 ];
-
-const ARCHITECTURE_PROMPT =
-  "Map the complete architecture. Confirm the layer-1 infrastructure first, " +
-  "then expand every resource to show all layers (disks, networks, IAM, " +
-  "lifecycle, SSL, WAF, schemas) using the full_architecture_map tool.";
 
 function statusDot(status: AgentStatus, color: string) {
   if (status === "active") {
@@ -142,10 +137,6 @@ export default function AgentsPanel() {
     sendChatMessage(meta.prompt);
   }
 
-  function triggerArchitecture() {
-    sendChatMessage(ARCHITECTURE_PROMPT);
-  }
-
   return (
     <aside className="border-r border-canvas-border bg-canvas-bg/60 backdrop-blur w-[200px] hidden lg:flex flex-col h-screen shrink-0">
       <header className="px-3 py-2.5 border-b border-canvas-border shrink-0">
@@ -176,32 +167,11 @@ export default function AgentsPanel() {
           />
         ))}
 
-        <div className="pt-2 mt-1 border-t border-canvas-border space-y-1.5">
-          <p className="text-[10px] uppercase tracking-wider text-gray-500 px-0.5">Quick action</p>
-          <button
-            type="button"
-            disabled={streaming}
-            onClick={triggerArchitecture}
-            className="w-full text-left rounded-lg p-2.5 transition-all group disabled:opacity-50 disabled:cursor-not-allowed bg-gradient-to-br from-canvas-accent/20 to-canvas-accent2/10 border border-canvas-accent/40 hover:border-canvas-accent hover:from-canvas-accent/30 hover:to-canvas-accent2/20 cursor-pointer"
-          >
-            <div className="flex items-center gap-2.5">
-              <div
-                className="h-8 w-8 rounded-md flex items-center justify-center shrink-0"
-                style={{ background: "#4285F433", color: "#4285F4" }}
-              >
-                <Layers3 size={15} />
-              </div>
-              <div className="flex-1 min-w-0">
-                <p className="text-xs font-medium">Map full architecture</p>
-                <p className="text-[10px] text-gray-400 leading-tight truncate">
-                  L1 + all sub-layers
-                </p>
-              </div>
-            </div>
-            <p className="mt-2 pt-2 border-t border-canvas-accent/20 text-[10px] text-gray-400 line-clamp-2 group-hover:text-gray-200 transition">
-              Builds the complete canvas in one shot.
-            </p>
-          </button>
+        <div className="pt-2 mt-1 border-t border-canvas-border">
+          <p className="text-[10px] text-gray-500 leading-relaxed">
+            Drill into one service at a time: click a node in the canvas →
+            "Expand context" to open it in its own tab.
+          </p>
         </div>
       </div>
 
