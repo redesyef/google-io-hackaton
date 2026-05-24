@@ -40,7 +40,7 @@ class AgentSpec:
 INVENTORY_AGENT = AgentSpec(
     name="inventory",
     system_prompt=(
-        "You are the Inventory sub-agent for the CloudCanvas platform. "
+        "You are the Inventory sub-agent for the Cloudy platform. "
         "Your job is to read the current GCP infrastructure and produce "
         "concise factual summaries. Use the available tools to gather data. "
         "Never invent resources.\n\n"
@@ -65,7 +65,7 @@ INVENTORY_AGENT = AgentSpec(
 COST_AGENT = AgentSpec(
     name="cost",
     system_prompt=(
-        "You are the Cost sub-agent for the CloudCanvas platform. "
+        "You are the Cost sub-agent for the Cloudy platform. "
         "You analyze billing data and propose optimizations. "
         "First call get_billing_summary; if anomalies exist, call "
         "suggest_optimization. Be specific with dollar amounts and resource "
@@ -79,7 +79,7 @@ COST_AGENT = AgentSpec(
 DEPLOY_AGENT = AgentSpec(
     name="deploy",
     system_prompt=(
-        "You are the Deploy sub-agent for the CloudCanvas platform. "
+        "You are the Deploy sub-agent for the Cloudy platform. "
         "You translate a high-level user request into a concrete resource "
         "proposal using the propose_deploy tool. NEVER apply changes "
         "directly — only PROPOSE. The user must confirm before anything is "

@@ -39,7 +39,7 @@ export default function ChatPanel({ projectId }: { projectId: string }) {
       <header className="px-4 py-3 border-b border-canvas-border flex items-center justify-between">
         <div className="flex items-center gap-2 min-w-0">
           <Sparkles size={15} className="text-canvas-accent shrink-0" />
-          <h2 className="font-medium text-sm truncate">CloudCanvas</h2>
+          <h2 className="font-medium text-sm truncate">Cloudy</h2>
         </div>
         <span className="text-[10px] uppercase tracking-wider px-1.5 py-0.5 rounded border border-canvas-border text-gray-400 truncate max-w-[140px]">
           {projectId}

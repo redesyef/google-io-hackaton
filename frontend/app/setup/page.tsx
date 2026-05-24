@@ -15,12 +15,12 @@ type ParsedSA = {
 } | null;
 
 const GCLOUD_SETUP_CMD = `# 1. Create a service account
-gcloud iam service-accounts create cloudcanvas-reader \\
-  --display-name="CloudCanvas Reader"
+gcloud iam service-accounts create cloudy-reader \\
+  --display-name="Cloudy Reader"
 
 # 2. Grant read-only roles on your project
 PROJECT_ID=$(gcloud config get-value project)
-SA_EMAIL="cloudcanvas-reader@\${PROJECT_ID}.iam.gserviceaccount.com"
+SA_EMAIL="cloudy-reader@\${PROJECT_ID}.iam.gserviceaccount.com"
 
 gcloud projects add-iam-policy-binding $PROJECT_ID \\
   --member="serviceAccount:$SA_EMAIL" --role="roles/viewer"
@@ -29,7 +29,7 @@ gcloud projects add-iam-policy-binding $PROJECT_ID \\
   --member="serviceAccount:$SA_EMAIL" --role="roles/billing.viewer"
 
 # 3. Download a JSON key
-gcloud iam service-accounts keys create ~/cloudcanvas-key.json \\
+gcloud iam service-accounts keys create ~/cloudy-key.json \\
   --iam-account="$SA_EMAIL"`;
 
 export default function SetupPage() {

@@ -9,7 +9,7 @@ export default function Home() {
           Built with Gemini 3.5 Flash · Managed Agents
         </div>
         <h1 className="text-5xl font-semibold tracking-tight">
-          CloudCanvas
+          Cloudy
         </h1>
         <p className="text-lg text-gray-400">
           A bidirectional canvas for your Google Cloud. Click a node, talk to

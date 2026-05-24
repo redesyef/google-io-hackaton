@@ -2,7 +2,7 @@ import type { Metadata } from "next";
 import "./globals.css";
 
 export const metadata: Metadata = {
-  title: "CloudCanvas — Conversational GCP",
+  title: "Cloudy — Conversational GCP",
   description:
     "Live infrastructure canvas powered by Gemini 3.5 Flash managed agents.",
 };

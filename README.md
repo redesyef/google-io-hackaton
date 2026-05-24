@@ -1,8 +1,8 @@
-# CloudCanvas — Conversational Infrastructure for GCP
+# Cloudy — Conversational Infrastructure for GCP
 
 > Google I/O Hackathon 2026 · Built with Gemini 3.5 Flash + Managed Agents
 
-CloudCanvas is a **bidirectional canvas** for your Google Cloud
+Cloudy is a **bidirectional canvas** for your Google Cloud
 infrastructure: a live diagram you can click, plus a multi-agent chat that
 reads, reasons about, and acts on what you see. Not a chatbot with tools —
 a coordinated system of **managed sub-agents** (inventory · cost · deploy)
